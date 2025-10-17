@@ -348,19 +348,17 @@ def create_performance_chart(df):
     fig.update_layout(
         title={
             'text': '✅ Performance do Checklist por Critério',
-            'font': {'size': 22, 'color': CARGLASS_DARK_RED, 'family': 'Inter', 'weight': 'bold'},
+            'font': {'size': 22, 'color': CARGLASS_DARK_RED, 'family': 'Inter'},
             'x': 0.5,
             'xanchor': 'center'
         },
         xaxis=dict(
-            title='Critérios de Avaliação',
-            titlefont=dict(size=14, color=CARGLASS_GRAY, family='Inter'),
+            title=dict(text='Critérios de Avaliação', font=dict(size=14, color=CARGLASS_GRAY, family='Inter')),
             tickfont=dict(size=12, color=CARGLASS_GRAY, family='Inter')
         ),
         yaxis=dict(
-            title='Performance (%)',
             range=[0, 110],
-            titlefont=dict(size=14, color=CARGLASS_GRAY, family='Inter'),
+            title=dict(text='Performance (%)', font=dict(size=14, color=CARGLASS_GRAY, family='Inter')),
             tickfont=dict(size=12, color=CARGLASS_GRAY, family='Inter')
         ),
         plot_bgcolor='#FAFBFC',
@@ -423,7 +421,7 @@ def create_satisfaction_donut(df):
         fig.update_layout(
             title={
                 'text': '😊 Distribuição de Satisfação do Cliente',
-                'font': {'size': 22, 'color': CARGLASS_DARK_RED, 'family': 'Inter', 'weight': 'bold'},
+                'font': {'size': 22, 'color': CARGLASS_DARK_RED, 'family': 'Inter'},
                 'x': 0.5,
                 'xanchor': 'center'
             },
@@ -487,7 +485,7 @@ def create_risk_analysis(df):
         fig.update_layout(
             title={
                 'text': '⚠️ Análise de Risco',
-                'font': {'size': 20, 'color': CARGLASS_DARK_RED, 'family': 'Inter', 'weight': 'bold'},
+                'font': {'size': 20, 'color': CARGLASS_DARK_RED, 'family': 'Inter'},
                 'x': 0.5,
                 'xanchor': 'center'
             },
@@ -496,8 +494,7 @@ def create_risk_analysis(df):
                 tickfont=dict(size=12, color=CARGLASS_GRAY, family='Inter')
             ),
             yaxis=dict(
-                title='Número de Casos',
-                titlefont=dict(size=13, color=CARGLASS_GRAY, family='Inter'),
+                title=dict(text='Número de Casos', font=dict(size=13, color=CARGLASS_GRAY, family='Inter')),
                 tickfont=dict(size=11, color=CARGLASS_GRAY, family='Inter')
             ),
             height=350,
@@ -553,14 +550,13 @@ def create_agent_ranking(df, top_n=5):
         fig.update_layout(
             title={
                 'text': '👥 Top 5 Agentes por Score',
-                'font': {'size': 20, 'color': CARGLASS_DARK_RED, 'family': 'Inter', 'weight': 'bold'},
+                'font': {'size': 20, 'color': CARGLASS_DARK_RED, 'family': 'Inter'},
                 'x': 0.5,
                 'xanchor': 'center'
             },
             xaxis=dict(
-                title='Score Médio',
                 range=[0, max(agent_scores['Score Médio']) * 1.2],
-                titlefont=dict(size=13, color=CARGLASS_GRAY, family='Inter'),
+                title=dict(text='Score Médio', font=dict(size=13, color=CARGLASS_GRAY, family='Inter')),
                 tickfont=dict(size=11, color=CARGLASS_GRAY, family='Inter')
             ),
             yaxis=dict(
@@ -621,7 +617,7 @@ def create_outcome_chart(df):
         fig.update_layout(
             title={
                 'text': '📞 Desfecho das Ligações',
-                'font': {'size': 20, 'color': CARGLASS_DARK_RED, 'family': 'Inter', 'weight': 'bold'},
+                'font': {'size': 20, 'color': CARGLASS_DARK_RED, 'family': 'Inter'},
                 'x': 0.5,
                 'xanchor': 'center'
             },
@@ -689,24 +685,21 @@ def create_timeline_chart(df):
             fig.update_layout(
                 title={
                     'text': '📈 Evolução Temporal do Score',
-                    'font': {'size': 22, 'color': CARGLASS_DARK_RED, 'family': 'Inter', 'weight': 'bold'},
+                    'font': {'size': 22, 'color': CARGLASS_DARK_RED, 'family': 'Inter'},
                     'x': 0.5,
                     'xanchor': 'center'
                 },
                 xaxis=dict(
-                    title='Data',
-                    titlefont=dict(size=14, color=CARGLASS_GRAY, family='Inter'),
+                    title=dict(text='Data', font=dict(size=14, color=CARGLASS_GRAY, family='Inter')),
                     tickfont=dict(size=11, color=CARGLASS_GRAY, family='Inter')
                 ),
                 yaxis=dict(
-                    title='Score Médio',
-                    titlefont=dict(color=CARGLASS_RED, size=13, family='Inter'),
+                    title=dict(text='Score Médio', font=dict(color=CARGLASS_RED, size=13, family='Inter')),
                     tickfont=dict(color=CARGLASS_RED, size=11, family='Inter'),
                     side='left'
                 ),
                 yaxis2=dict(
-                    title='Quantidade de Análises',
-                    titlefont=dict(color=CARGLASS_BLUE, size=13, family='Inter'),
+                    title=dict(text='Quantidade de Análises', font=dict(color=CARGLASS_BLUE, size=13, family='Inter')),
                     tickfont=dict(color=CARGLASS_BLUE, size=11, family='Inter'),
                     overlaying='y',
                     side='right'
@@ -1076,9 +1069,8 @@ if df is not None and len(df) > 0:
                 fig.update_layout(
                     title=f'Performance de {selected_agent}',
                     xaxis=dict(
-                        title='Performance (%)',
                         range=[0, 110],
-                        titlefont=dict(size=13, color=CARGLASS_GRAY, family='Inter'),
+                        title=dict(text='Performance (%)', font=dict(size=13, color=CARGLASS_GRAY, family='Inter')),
                         tickfont=dict(size=11, color=CARGLASS_GRAY, family='Inter')
                     ),
                     yaxis=dict(
@@ -1131,8 +1123,7 @@ if df is not None and len(df) > 0:
                     colorscale=[[0, CARGLASS_RED], [0.5, CARGLASS_YELLOW], [1, CARGLASS_GREEN]],
                     showscale=True,
                     colorbar=dict(
-                        title="Score<br>Médio",
-                        titlefont=dict(size=11, family='Inter'),
+                        title=dict(text="Score<br>Médio", font=dict(size=11, family='Inter')),
                         tickfont=dict(size=10, family='Inter')
                     ),
                     line=dict(width=2, color='white')
@@ -1146,13 +1137,11 @@ if df is not None and len(df) > 0:
             fig.update_layout(
                 title='Análise Comparativa de Agentes',
                 xaxis=dict(
-                    title='Total de Ligações',
-                    titlefont=dict(size=13, color=CARGLASS_GRAY, family='Inter'),
+                    title=dict(text='Total de Ligações', font=dict(size=13, color=CARGLASS_GRAY, family='Inter')),
                     tickfont=dict(size=11, color=CARGLASS_GRAY, family='Inter')
                 ),
                 yaxis=dict(
-                    title='Score Médio',
-                    titlefont=dict(size=13, color=CARGLASS_GRAY, family='Inter'),
+                    title=dict(text='Score Médio', font=dict(size=13, color=CARGLASS_GRAY, family='Inter')),
                     tickfont=dict(size=11, color=CARGLASS_GRAY, family='Inter')
                 ),
                 height=500,
