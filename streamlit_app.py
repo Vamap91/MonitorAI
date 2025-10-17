@@ -42,7 +42,7 @@ custom_css = """
     
     /* Header com gradiente */
     .header-gradient {
-        background: linear-gradient(135deg, """ + CARGLASS_RED + """ 0%, """ + CARGLASS_DARK_RED + """ 50%, """ + CARGLASS_DARK_BLUE + """ 100%);
+        background: linear-gradient(135deg, """ + CARGLASS_RED + """ 0%, """ + CARGLASS_DARK_RED + """ 100%);
         padding: 40px;
         border-radius: 20px;
         margin-bottom: 30px;
@@ -255,6 +255,27 @@ custom_css = """
     .js-plotly-plot {
         border-radius: 12px;
         overflow: hidden;
+    }
+
+    
+    /* Sidebar labels e inputs */
+    section[data-testid="stSidebar"] label {
+        color: white !important;
+    }
+    
+    section[data-testid="stSidebar"] .stSelectbox label,
+    section[data-testid="stSidebar"] .stDateInput label,
+    section[data-testid="stSidebar"] .stFileUploader label {
+        color: white !important;
+        font-weight: 600 !important;
+    }
+    
+    section[data-testid="stSidebar"] p {
+        color: white !important;
+    }
+    
+    section[data-testid="stSidebar"] .stMarkdown p {
+        color: white !important;
     }
 </style>
 """
@@ -574,70 +595,89 @@ def create_agent_ranking(df, top_n=5):
         return fig
     return None
 
-# Função para criar gráfico de desfecho das ligações
-def create_outcome_chart(df):
-    if 'ClientOutcome' in df.columns:
-        outcome_counts = df['ClientOutcome'].value_counts()
+# Função para criar gráfico de bottom 5 agentes (necessitam treinamento)
+def create_bottom_performers(df, bottom_n=5):
+    if 'CustomerAgent' in df.columns and 'NOTAS' in df.columns:
+        agent_scores = df.groupby('CustomerAgent').agg({
+            'NOTAS': 'mean',
+            'IdAnalysis': 'count'
+        }).round(1)
         
-        # Mapear cores
-        colors_map = {
-            'POSITIVO': '#4ECDC4',
-            'RESOLVIDO': '#4ECDC4',
-            'RESOLVIDO CO': '#95E1D3',
-            'PENDENTE': '#FFE66D',
-            'INCOMPLETO': '#FF6B6B',
-            'NEGATIVO': '#FF6B6B',
-            'ATENDIMENTO ': '#A8DADC'
-        }
+        agent_scores.columns = ['Score Médio', 'Total Ligações']
         
-        colors_list = [colors_map.get(x, CARGLASS_GRAY) for x in outcome_counts.index]
+        # Filtrar agentes com pelo menos 10 ligações
+        agent_scores = agent_scores[agent_scores['Total Ligações'] >= 10]
         
-        # Limpar labels
-        labels_clean = []
-        for label in outcome_counts.index:
-            if pd.isna(label):
-                labels_clean.append('Não definido')
+        # Pegar os 5 piores
+        agent_scores = agent_scores.sort_values('Score Médio', ascending=True).head(bottom_n)
+        
+        # Formatar nomes (primeiro e último nome)
+        agent_names = []
+        for name in agent_scores.index:
+            parts = name.split()
+            if len(parts) >= 2:
+                agent_names.append(f"{parts[0]} {parts[-1]}")
             else:
-                labels_clean.append(str(label).strip().title())
+                agent_names.append(parts[0])
         
-        fig = go.Figure(data=[go.Pie(
-            labels=labels_clean,
-            values=outcome_counts.values,
-            hole=.5,
+        # Cores em gradiente de vermelho (pior) para laranja
+        colors_agents = [CARGLASS_RED if i == 0 else CARGLASS_ORANGE for i in range(len(agent_names))]
+        
+        fig = go.Figure()
+        
+        fig.add_trace(go.Bar(
+            x=agent_scores['Score Médio'],
+            y=agent_names,
+            orientation='h',
             marker=dict(
-                colors=colors_list,
-                line=dict(color='white', width=3)
+                color=colors_agents,
+                line=dict(color='white', width=2)
             ),
-            textinfo='label+percent',
+            text=[f"{score:.1f} pts<br>{calls} ligações" 
+                  for score, calls in zip(agent_scores['Score Médio'], agent_scores['Total Ligações'])],
             textposition='outside',
-            textfont=dict(size=11, color=CARGLASS_DARK_RED, family='Inter', weight='bold'),
-            hovertemplate='<b>%{label}</b><br>Quantidade: %{value}<br>Percentual: %{percent}<extra></extra>'
-        )])
+            textfont=dict(size=11, color=CARGLASS_DARK_RED, family='Inter'),
+            hovertemplate='<b>%{y}</b><br>Score: %{x:.1f}<br>Ligações: %{text}<extra></extra>'
+        ))
         
         fig.update_layout(
             title={
-                'text': '📞 Desfecho das Ligações',
+                'text': '⚠️ Necessitam Treinamento',
                 'font': {'size': 20, 'color': CARGLASS_DARK_RED, 'family': 'Inter'},
                 'x': 0.5,
                 'xanchor': 'center'
             },
+            xaxis=dict(
+                title=dict(text='Score Médio', font=dict(size=13, color=CARGLASS_GRAY, family='Inter')),
+                range=[0, max(agent_scores['Score Médio']) * 1.3],
+                tickfont=dict(size=11, color=CARGLASS_GRAY, family='Inter')
+            ),
+            yaxis=dict(
+                title=dict(text='', font=dict(size=13, color=CARGLASS_GRAY, family='Inter')),
+                tickfont=dict(size=12, color=CARGLASS_DARK_RED, family='Inter')
+            ),
             height=350,
+            showlegend=False,
+            plot_bgcolor='#FAFBFC',
             paper_bgcolor='white',
             font={'color': CARGLASS_DARK_RED, 'family': 'Inter'},
-            showlegend=True,
-            legend=dict(
-                orientation="v",
-                yanchor="middle",
-                y=0.5,
-                xanchor="left",
-                x=1.05,
-                font=dict(size=10, family='Inter')
-            ),
-            margin=dict(l=40, r=150, t=70, b=40)
+            margin=dict(l=150, r=100, t=70, b=50)
+        )
+        
+        # Adicionar linha de meta
+        fig.add_vline(
+            x=70, 
+            line_dash="dash", 
+            line_color=CARGLASS_GREEN,
+            line_width=2,
+            annotation_text="Meta: 70", 
+            annotation_position="top",
+            annotation_font=dict(size=11, color=CARGLASS_GREEN, family='Inter')
         )
         
         return fig
     return None
+
 
 # Função para criar gráfico de timeline (CORRIGIDA)
 def create_timeline_chart(df):
@@ -957,9 +997,9 @@ if df is not None and len(df) > 0:
     
     with col3:
         st.markdown("<div class='content-card'>", unsafe_allow_html=True)
-        outcome_chart = create_outcome_chart(df)
-        if outcome_chart:
-            st.plotly_chart(outcome_chart, use_container_width=True)
+        bottom_chart = create_bottom_performers(df)
+        if bottom_chart:
+            st.plotly_chart(bottom_chart, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
     
     with col4:
@@ -1165,9 +1205,7 @@ if df is not None and len(df) > 0:
             
             # Tabela de comparação
             st.dataframe(
-                agent_comparison.style.background_gradient(subset=['Score Médio'], cmap='RdYlGn', vmin=0, vmax=100)
-                                     .background_gradient(subset=['% Risco Baixo'], cmap='RdYlGn', vmin=0, vmax=100)
-                                     .format({'Score Médio': '{:.1f}', '% Risco Baixo': '{:.1f}%'}),
+                agent_comparison.style.format({'Score Médio': '{:.1f}', '% Risco Baixo': '{:.1f}%'}),
                 use_container_width=True,
                 height=400
             )
