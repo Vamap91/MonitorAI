@@ -408,22 +408,44 @@ def create_satisfaction_donut(df):
         'BOA': 'Boa',
         'MODERADA': 'Moderada',
         'BAIXA': 'Baixa',
-        'ALTA': 'Alta'
+        'ALTA': 'Alta',
+        'SATISFEITA': 'Satisfeita',
+        'SATISFEITO': 'Satisfeito',
+        'MÉDIA': 'Média',
+        'MEDIA': 'Média',
+        'NEUTRA': 'Neutra',
+        'INSATISFEITO': 'Insatisfeito'
+    }
+    
+    # Mapa de cores semânticas (do verde forte ao vermelho forte)
+    color_map = {
+        'Alta': '#00A86B',           # Verde forte
+        'Boa': '#28A745',            # Verde médio forte
+        'Satisfeita': '#5CB85C',     # Verde normal
+        'Satisfeito': '#5CB85C',     # Verde normal
+        'Média': '#90EE90',          # Verde claro
+        'Moderada': '#FFC107',       # Amarelo
+        'Neutra': '#FFD700',         # Amarelo ouro
+        'Baixa': '#FF6B6B',          # Vermelho claro
+        'Insatisfeito': '#DC0A0A'    # Vermelho escuro (Carglass)
     }
     
     if 'Client' in df.columns:
         satisfaction_counts = df['Client'].value_counts()
-        labels = [satisfaction_map.get(label, label) for label in satisfaction_counts.index]
+        
+        # Mapear labels
+        labels = []
+        for label in satisfaction_counts.index:
+            if pd.isna(label):
+                labels.append('Não definido')
+            else:
+                mapped = satisfaction_map.get(str(label).strip().upper(), str(label).strip().title())
+                labels.append(mapped)
+        
         values = satisfaction_counts.values
         
-        colors_list = []
-        for label in labels:
-            if label in ['Boa', 'Alta']:
-                colors_list.append('#4ECDC4')
-            elif label == 'Moderada':
-                colors_list.append('#FFE66D')
-            else:
-                colors_list.append('#FF6B6B')
+        # Aplicar cores baseadas no mapa semântico
+        colors_list = [color_map.get(label, '#6C757D') for label in labels]
         
         fig = go.Figure(data=[go.Pie(
             labels=labels,
@@ -435,7 +457,7 @@ def create_satisfaction_donut(df):
             ),
             textinfo='label+percent',
             textposition='outside',
-            textfont=dict(size=13, color=CARGLASS_DARK_RED, family='Inter', weight='bold'),
+            textfont=dict(size=13, color=CARGLASS_DARK_RED, family='Inter'),
             hovertemplate='<b>%{label}</b><br>Quantidade: %{value}<br>Percentual: %{percent}<extra></extra>'
         )])
         
@@ -463,6 +485,7 @@ def create_satisfaction_donut(df):
         
         return fig
     return None
+
 
 # Função para criar análise de risco
 def create_risk_analysis(df):
