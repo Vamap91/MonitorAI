@@ -1296,9 +1296,10 @@ if df is not None and len(df) > 0:
     
     with col1:
         st.markdown("<div class='content-card'>", unsafe_allow_html=True)
-        satisfaction_chart = create_satisfaction_donut(df)
-        if satisfaction_chart:
-            st.plotly_chart(satisfaction_chart, use_container_width=True)
+        # Gráfico de Risco Baixo vs Alto (removido Satisfação)
+        risk_comparison_chart = create_risk_baixo_alto_chart(df)
+        if risk_comparison_chart:
+            st.plotly_chart(risk_comparison_chart, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
     
     with col2:
@@ -1486,7 +1487,10 @@ if df is not None and len(df) > 0:
         score_col = 'PERCENTUAL' if 'PERCENTUAL' in df.columns else 'NOTAS'
         
         if 'CustomerAgent' in df.columns and score_col in df.columns:
-            agent_comparison = df.groupby('CustomerAgent').agg({
+            # Filtrar apenas Risco Baixo e Alto (remover Médio)
+            df_filtered = df[df['ClientRisk'].isin(['BAIXO', 'ALTO'])] if 'ClientRisk' in df.columns else df
+            
+            agent_comparison = df_filtered.groupby('CustomerAgent').agg({
                 score_col: 'mean',
                 'IdAnalysis': 'count',
                 'ClientRisk': lambda x: (x == 'BAIXO').sum() / len(x) * 100 if len(x) > 0 else 0
