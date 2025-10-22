@@ -5,8 +5,20 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import numpy as np
 from io import BytesIO
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.pdfgen import canvas
+from reportlab.graphics.shapes import Drawing
+from reportlab.graphics.charts.piecharts import Pie
+from reportlab.graphics.charts.barcharts import VerticalBarChart
+from reportlab.lib.colors import HexColor
+import tempfile
+import base64
 
-# Configuração da página
 st.set_page_config(
     page_title="Monitor AI - Carglass",
     page_icon="🔴",
@@ -14,7 +26,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Paleta de cores Carglass
 CARGLASS_RED = "#DC0A0A"
 CARGLASS_DARK_RED = "#B00000"
 CARGLASS_BLUE = "#4A90E2"
@@ -27,7 +38,6 @@ CARGLASS_GREEN = "#28A745"
 CARGLASS_YELLOW = "#FFC107"
 CARGLASS_ORANGE = "#FD7E14"
 
-# CSS personalizado com design moderno
 custom_css = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -40,7 +50,6 @@ custom_css = """
         background: #F5F7FA;
     }
     
-    /* Header com gradiente */
     .header-gradient {
         background: linear-gradient(135deg, """ + CARGLASS_RED + """ 0%, """ + CARGLASS_DARK_RED + """ 100%);
         padding: 40px;
@@ -77,7 +86,6 @@ custom_css = """
         font-weight: 400;
     }
     
-    /* KPI Cards modernos */
     .kpi-card-modern {
         background: linear-gradient(135deg, """ + CARGLASS_PURPLE + """ 0%, """ + CARGLASS_LIGHT_PURPLE + """ 100%);
         padding: 30px;
@@ -130,7 +138,6 @@ custom_css = """
         gap: 5px;
     }
     
-    /* Cards de conteúdo */
     .content-card {
         background: white;
         padding: 25px;
@@ -150,7 +157,6 @@ custom_css = """
         gap: 10px;
     }
     
-    /* Sidebar styling */
     section[data-testid="stSidebar"] {
         background: linear-gradient(180deg, """ + CARGLASS_RED + """ 0%, """ + CARGLASS_DARK_RED + """ 100%);
     }
@@ -159,7 +165,6 @@ custom_css = """
         color: white;
     }
     
-    /* Tabs styling */
     .stTabs [data-baseweb="tab-list"] {
         gap: 8px;
     }
@@ -177,7 +182,6 @@ custom_css = """
         color: white;
     }
     
-    /* Botões */
     .stButton > button {
         background: linear-gradient(135deg, """ + CARGLASS_RED + """ 0%, """ + CARGLASS_DARK_RED + """ 100%);
         color: white;
@@ -193,19 +197,16 @@ custom_css = """
         box-shadow: 0 8px 16px rgba(0,0,0,0.2);
     }
     
-    /* Selectbox e inputs */
     .stSelectbox label, .stMultiSelect label, .stDateInput label {
         color: white !important;
         font-weight: 600 !important;
     }
     
-    /* Ajustes para gráficos */
     .js-plotly-plot {
         border-radius: 12px;
         overflow: hidden;
     }
     
-    /* Sidebar labels e inputs */
     section[data-testid="stSidebar"] label {
         color: white !important;
     }
@@ -225,7 +226,6 @@ custom_css = """
         color: white !important;
     }
     
-    /* Métricas Streamlit customizadas */
     div[data-testid="metric-container"] {
         background: transparent;
         padding: 0;
@@ -255,7 +255,6 @@ custom_css = """
 
 st.markdown(custom_css, unsafe_allow_html=True)
 
-# Função para carregar dados
 @st.cache_data
 def load_data(file):
     try:
@@ -263,23 +262,19 @@ def load_data(file):
         if 'Consulta1' in xls.sheet_names:
             df = pd.read_excel(file, sheet_name='Consulta1')
             
-            # Converter colunas de data
             if 'AnalysisDateTime' in df.columns:
                 df['AnalysisDateTime'] = pd.to_datetime(df['AnalysisDateTime'])
             if 'CallDate' in df.columns:
                 df['CallDate'] = pd.to_datetime(df['CallDate'])
             
-            # Verificar e processar coluna de avaliação 100 pts
             avaliacao_cols = ['Avaliação 100 pts', 'Avaliacao 100 pts', 'Avaliação100pts', 'Avaliacao100pts']
             for col in avaliacao_cols:
                 if col in df.columns:
-                    df['PONTOS_100'] = pd.to_numeric(df[col], errors='coerce')
+                    df['PERCENTUAL'] = pd.to_numeric(df[col], errors='coerce')
                     break
             
-            # Se não encontrar a coluna de 100 pontos, usar NOTAS se existir
-            if 'PONTOS_100' not in df.columns and 'NOTAS' in df.columns:
-                # Converter NOTAS (escala de 81) para escala de 100
-                df['PONTOS_100'] = (df['NOTAS'] / 81) * 100
+            if 'PERCENTUAL' not in df.columns and 'NOTAS' in df.columns:
+                df['PERCENTUAL'] = (df['NOTAS'] / 81) * 100
             
             return df
         else:
@@ -289,7 +284,177 @@ def load_data(file):
         st.error(f"Erro ao carregar arquivo: {str(e)}")
         return None
 
-# Função para criar gráfico de gauge
+def generate_employee_pdf(df, employee_name):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    elements = []
+    styles = getSampleStyleSheet()
+    
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor=HexColor(CARGLASS_RED),
+        spaceAfter=30,
+        alignment=TA_CENTER
+    )
+    
+    subtitle_style = ParagraphStyle(
+        'CustomSubtitle',
+        parent=styles['Heading2'],
+        fontSize=16,
+        textColor=HexColor(CARGLASS_DARK_RED),
+        spaceAfter=20,
+        spaceBefore=20
+    )
+    
+    normal_style = ParagraphStyle(
+        'CustomNormal',
+        parent=styles['Normal'],
+        fontSize=11,
+        textColor=colors.black,
+        spaceAfter=10
+    )
+    
+    elements.append(Paragraph(f"Relatório de Performance", title_style))
+    elements.append(Paragraph(f"Colaborador: {employee_name}", subtitle_style))
+    elements.append(Paragraph(f"Data: {datetime.now().strftime('%d/%m/%Y')}", normal_style))
+    elements.append(Spacer(1, 0.5*inch))
+    
+    employee_df = df[df['CustomerAgent'] == employee_name]
+    
+    score_col = 'PERCENTUAL' if 'PERCENTUAL' in df.columns else 'NOTAS'
+    avg_score = employee_df[score_col].mean()
+    total_calls = len(employee_df)
+    
+    if 'ClientRisk' in employee_df.columns:
+        risk_baixo = (employee_df['ClientRisk'] == 'BAIXO').sum() / len(employee_df) * 100
+    else:
+        risk_baixo = 0
+    
+    if 'Client' in employee_df.columns:
+        satisfaction = employee_df[employee_df['Client'].isin(['BOA', 'ALTA'])].shape[0] / len(employee_df) * 100
+    else:
+        satisfaction = 0
+    
+    elements.append(Paragraph("Resumo de Performance", subtitle_style))
+    
+    summary_data = [
+        ['Métrica', 'Valor'],
+        ['Porcentagem de Acerto Média', f'{avg_score:.1f}%'],
+        ['Total de Ligações Analisadas', str(total_calls)],
+        ['Taxa de Risco Baixo', f'{risk_baixo:.1f}%'],
+        ['Taxa de Satisfação', f'{satisfaction:.1f}%']
+    ]
+    
+    summary_table = Table(summary_data, colWidths=[3*inch, 2*inch])
+    summary_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), HexColor(CARGLASS_RED)),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    
+    elements.append(summary_table)
+    elements.append(Spacer(1, 0.5*inch))
+    
+    question_names = {
+        'Question1': 'Saudação',
+        'Question2': 'Dados Cadastrais',
+        'Question3': 'LGPD',
+        'Question4': 'Técnica do Eco',
+        'Question5': 'Escuta Ativa',
+        'Question6': 'Conhecimento',
+        'Question7': 'Confirmação',
+        'Question8': 'Seleção Loja',
+        'Question9': 'Comunicação',
+        'Question10': 'Conduta',
+        'Question11': 'Encerramento',
+        'Question12': 'Pesquisa'
+    }
+    
+    elements.append(Paragraph("Performance por Critério", subtitle_style))
+    
+    criteria_data = [['Critério', 'Acerto (%)']]
+    for i in range(1, 13):
+        q = f'Question{i}'
+        if q in employee_df.columns:
+            perf = employee_df[q].mean() * 100
+            criteria_data.append([question_names.get(q, q), f'{perf:.1f}%'])
+    
+    criteria_table = Table(criteria_data, colWidths=[3*inch, 2*inch])
+    criteria_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), HexColor(CARGLASS_RED)),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 12),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    
+    elements.append(criteria_table)
+    elements.append(PageBreak())
+    
+    if 'AnalysisDateTime' in employee_df.columns:
+        elements.append(Paragraph("Histórico Recente", subtitle_style))
+        
+        recent_df = employee_df.sort_values('AnalysisDateTime', ascending=False).head(10)
+        
+        history_data = [['Data', 'Acerto (%)', 'Risco', 'Satisfação']]
+        for _, row in recent_df.iterrows():
+            date_str = row['AnalysisDateTime'].strftime('%d/%m/%Y')
+            score = row[score_col] if score_col == 'PERCENTUAL' else (row[score_col]/81)*100
+            risk = row.get('ClientRisk', 'N/A')
+            client = row.get('Client', 'N/A')
+            history_data.append([date_str, f'{score:.1f}%', risk, client])
+        
+        history_table = Table(history_data, colWidths=[1.5*inch, 1.5*inch, 1.5*inch, 1.5*inch])
+        history_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), HexColor(CARGLASS_RED)),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('FONTSIZE', (0, 1), (-1, -1), 9)
+        ]))
+        
+        elements.append(history_table)
+    
+    elements.append(Spacer(1, 0.5*inch))
+    elements.append(Paragraph("Recomendações", subtitle_style))
+    
+    weak_points = []
+    for i in range(1, 13):
+        q = f'Question{i}'
+        if q in employee_df.columns:
+            perf = employee_df[q].mean() * 100
+            if perf < 70:
+                weak_points.append((question_names.get(q, q), perf))
+    
+    weak_points.sort(key=lambda x: x[1])
+    
+    if weak_points:
+        recommendations = "Pontos que necessitam maior atenção:<br/>"
+        for point, perf in weak_points[:3]:
+            recommendations += f"• {point}: {perf:.1f}% de acerto<br/>"
+    else:
+        recommendations = "Parabéns! Todos os critérios estão acima da meta de 70%."
+    
+    elements.append(Paragraph(recommendations, normal_style))
+    
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
 def create_gauge_chart(value, title, color, reference=70):
     fig = go.Figure(go.Indicator(
         mode="gauge+number+delta",
@@ -324,7 +489,6 @@ def create_gauge_chart(value, title, color, reference=70):
     
     return fig
 
-# Função para criar gráfico de performance por critério
 def create_performance_chart(df):
     questions = [f'Question{i}' for i in range(1, 13)]
     question_labels = [
@@ -352,7 +516,7 @@ def create_performance_chart(df):
             text=[f'{p:.1f}%' for p in performance],
             textposition='outside',
             textfont=dict(size=12, color=CARGLASS_DARK_RED, family='Inter', weight='bold'),
-            hovertemplate='<b>%{x}</b><br>Performance: %{y:.1f}%<extra></extra>'
+            hovertemplate='<b>%{x}</b><br>Acerto: %{y:.1f}%<extra></extra>'
         )
     ])
     
@@ -369,7 +533,7 @@ def create_performance_chart(df):
         ),
         yaxis=dict(
             range=[0, 110],
-            title=dict(text='Performance (%)', font=dict(size=14, color=CARGLASS_GRAY, family='Inter')),
+            title=dict(text='Porcentagem de Acerto', font=dict(size=14, color=CARGLASS_GRAY, family='Inter')),
             tickfont=dict(size=12, color=CARGLASS_GRAY, family='Inter')
         ),
         plot_bgcolor='#FAFBFC',
@@ -392,7 +556,6 @@ def create_performance_chart(df):
     
     return fig
 
-# Função para criar gráfico donut de satisfação
 def create_satisfaction_donut(df):
     satisfaction_map = {
         'BOA': 'Boa',
@@ -407,7 +570,6 @@ def create_satisfaction_donut(df):
         'INSATISFEITO': 'Insatisfeito'
     }
     
-    # Mapa de cores semânticas
     color_map = {
         'Alta': '#00A86B',
         'Boa': '#28A745',
@@ -473,7 +635,6 @@ def create_satisfaction_donut(df):
         return fig
     return None
 
-# Função para criar análise de risco
 def create_risk_analysis(df):
     if 'ClientRisk' in df.columns:
         risk_counts = df['ClientRisk'].value_counts()
@@ -538,10 +699,8 @@ def create_risk_analysis(df):
         return fig
     return None
 
-# Função para criar ranking de agentes COM NOVA PONTUAÇÃO
 def create_agent_ranking(df, top_n=5):
-    # Usar PONTOS_100 se disponível, senão usar NOTAS
-    score_column = 'PONTOS_100' if 'PONTOS_100' in df.columns else 'NOTAS'
+    score_column = 'PERCENTUAL' if 'PERCENTUAL' in df.columns else 'NOTAS'
     
     if 'CustomerAgent' in df.columns and score_column in df.columns:
         agent_scores = df.groupby('CustomerAgent').agg({
@@ -549,10 +708,12 @@ def create_agent_ranking(df, top_n=5):
             'IdAnalysis': 'count'
         }).round(1)
         
-        agent_scores.columns = ['Score Médio', 'Total Ligações']
-        agent_scores = agent_scores.sort_values('Score Médio', ascending=False).head(top_n)
+        if score_column == 'NOTAS':
+            agent_scores[score_column] = (agent_scores[score_column] / 81) * 100
         
-        # Formatar nomes
+        agent_scores.columns = ['Porcentagem Média', 'Total Ligações']
+        agent_scores = agent_scores.sort_values('Porcentagem Média', ascending=False).head(top_n)
+        
         agent_names = []
         for name in agent_scores.index:
             parts = name.split()
@@ -566,33 +727,30 @@ def create_agent_ranking(df, top_n=5):
         fig = go.Figure()
         
         fig.add_trace(go.Bar(
-            x=agent_scores['Score Médio'],
+            x=agent_scores['Porcentagem Média'],
             y=agent_names,
             orientation='h',
             marker=dict(
                 color=colors_agents,
                 line=dict(color='white', width=2)
             ),
-            text=[f"{score:.1f} pts<br>{calls} ligações" 
-                  for score, calls in zip(agent_scores['Score Médio'], agent_scores['Total Ligações'])],
+            text=[f"{score:.1f}%<br>{calls} ligações" 
+                  for score, calls in zip(agent_scores['Porcentagem Média'], agent_scores['Total Ligações'])],
             textposition='outside',
             textfont=dict(size=11, color=CARGLASS_DARK_RED, family='Inter', weight='bold'),
-            hovertemplate='<b>%{y}</b><br>Score: %{x:.1f}<br>Ligações: %{text}<extra></extra>'
+            hovertemplate='<b>%{y}</b><br>Acerto: %{x:.1f}%<br>Ligações: %{text}<extra></extra>'
         ))
-        
-        # Ajustar range máximo baseado no tipo de pontuação
-        max_range = 120 if score_column == 'PONTOS_100' else max(agent_scores['Score Médio']) * 1.2
         
         fig.update_layout(
             title={
-                'text': '👥 Top 5 Agentes por Score (100 pts)' if score_column == 'PONTOS_100' else '👥 Top 5 Agentes por Score',
+                'text': '👥 Top 5 Agentes por Porcentagem de Acerto',
                 'font': {'size': 20, 'color': CARGLASS_DARK_RED, 'family': 'Inter'},
                 'x': 0.5,
                 'xanchor': 'center'
             },
             xaxis=dict(
-                range=[0, max_range],
-                title=dict(text='Score Médio', font=dict(size=13, color=CARGLASS_GRAY, family='Inter')),
+                range=[0, 110],
+                title=dict(text='Porcentagem de Acerto', font=dict(size=13, color=CARGLASS_GRAY, family='Inter')),
                 tickfont=dict(size=11, color=CARGLASS_GRAY, family='Inter')
             ),
             yaxis=dict(
@@ -610,9 +768,8 @@ def create_agent_ranking(df, top_n=5):
         return fig
     return None
 
-# Função para criar gráfico de bottom 5 agentes COM NOVA PONTUAÇÃO
 def create_bottom_performers(df, bottom_n=5):
-    score_column = 'PONTOS_100' if 'PONTOS_100' in df.columns else 'NOTAS'
+    score_column = 'PERCENTUAL' if 'PERCENTUAL' in df.columns else 'NOTAS'
     
     if 'CustomerAgent' in df.columns and score_column in df.columns:
         agent_scores = df.groupby('CustomerAgent').agg({
@@ -620,15 +777,15 @@ def create_bottom_performers(df, bottom_n=5):
             'IdAnalysis': 'count'
         }).round(1)
         
-        agent_scores.columns = ['Score Médio', 'Total Ligações']
+        if score_column == 'NOTAS':
+            agent_scores[score_column] = (agent_scores[score_column] / 81) * 100
         
-        # Filtrar agentes com pelo menos 10 ligações
+        agent_scores.columns = ['Porcentagem Média', 'Total Ligações']
+        
         agent_scores = agent_scores[agent_scores['Total Ligações'] >= 10]
         
-        # Pegar os 5 piores
-        agent_scores = agent_scores.sort_values('Score Médio', ascending=True).head(bottom_n)
+        agent_scores = agent_scores.sort_values('Porcentagem Média', ascending=True).head(bottom_n)
         
-        # Formatar nomes
         agent_names = []
         for name in agent_scores.index:
             parts = name.split()
@@ -642,21 +799,19 @@ def create_bottom_performers(df, bottom_n=5):
         fig = go.Figure()
         
         fig.add_trace(go.Bar(
-            x=agent_scores['Score Médio'],
+            x=agent_scores['Porcentagem Média'],
             y=agent_names,
             orientation='h',
             marker=dict(
                 color=colors_agents,
                 line=dict(color='white', width=2)
             ),
-            text=[f"{score:.1f} pts<br>{calls} ligações" 
-                  for score, calls in zip(agent_scores['Score Médio'], agent_scores['Total Ligações'])],
+            text=[f"{score:.1f}%<br>{calls} ligações" 
+                  for score, calls in zip(agent_scores['Porcentagem Média'], agent_scores['Total Ligações'])],
             textposition='outside',
             textfont=dict(size=11, color=CARGLASS_DARK_RED, family='Inter'),
-            hovertemplate='<b>%{y}</b><br>Score: %{x:.1f}<br>Ligações: %{text}<extra></extra>'
+            hovertemplate='<b>%{y}</b><br>Acerto: %{x:.1f}%<br>Ligações: %{text}<extra></extra>'
         ))
-        
-        max_range = 120 if score_column == 'PONTOS_100' else max(agent_scores['Score Médio']) * 1.3
         
         fig.update_layout(
             title={
@@ -666,8 +821,8 @@ def create_bottom_performers(df, bottom_n=5):
                 'xanchor': 'center'
             },
             xaxis=dict(
-                title=dict(text='Score Médio', font=dict(size=13, color=CARGLASS_GRAY, family='Inter')),
-                range=[0, max_range],
+                title=dict(text='Porcentagem de Acerto', font=dict(size=13, color=CARGLASS_GRAY, family='Inter')),
+                range=[0, 110],
                 tickfont=dict(size=11, color=CARGLASS_GRAY, family='Inter')
             ),
             yaxis=dict(
@@ -682,13 +837,12 @@ def create_bottom_performers(df, bottom_n=5):
             margin=dict(l=150, r=100, t=70, b=50)
         )
         
-        # Adicionar linha de meta
         fig.add_vline(
             x=70, 
             line_dash="dash", 
             line_color=CARGLASS_GREEN,
             line_width=2,
-            annotation_text="Meta: 70", 
+            annotation_text="Meta: 70%", 
             annotation_position="top",
             annotation_font=dict(size=11, color=CARGLASS_GREEN, family='Inter')
         )
@@ -696,9 +850,8 @@ def create_bottom_performers(df, bottom_n=5):
         return fig
     return None
 
-# Função para criar gráfico de timeline COM NOVA PONTUAÇÃO
 def create_timeline_chart(df):
-    score_column = 'PONTOS_100' if 'PONTOS_100' in df.columns else 'NOTAS'
+    score_column = 'PERCENTUAL' if 'PERCENTUAL' in df.columns else 'NOTAS'
     
     if 'AnalysisDateTime' in df.columns and score_column in df.columns:
         try:
@@ -706,7 +859,10 @@ def create_timeline_chart(df):
                 return None
             
             df_timeline = df.set_index('AnalysisDateTime').resample('D')[score_column].agg(['mean', 'count']).reset_index()
-            df_timeline.columns = ['Data', 'Score Médio', 'Quantidade']
+            df_timeline.columns = ['Data', 'Porcentagem Média', 'Quantidade']
+            
+            if score_column == 'NOTAS':
+                df_timeline['Porcentagem Média'] = (df_timeline['Porcentagem Média'] / 81) * 100
             
             df_timeline = df_timeline.dropna()
             
@@ -717,13 +873,13 @@ def create_timeline_chart(df):
             
             fig.add_trace(go.Scatter(
                 x=df_timeline['Data'],
-                y=df_timeline['Score Médio'],
+                y=df_timeline['Porcentagem Média'],
                 mode='lines+markers',
-                name='Score Médio (100 pts)' if score_column == 'PONTOS_100' else 'Score Médio',
+                name='Porcentagem de Acerto',
                 line=dict(color=CARGLASS_RED, width=3),
                 marker=dict(size=8, color=CARGLASS_RED, line=dict(color='white', width=2)),
                 yaxis='y',
-                hovertemplate='<b>Data: %{x|%d/%m/%Y}</b><br>Score: %{y:.1f}<extra></extra>'
+                hovertemplate='<b>Data: %{x|%d/%m/%Y}</b><br>Acerto: %{y:.1f}%<extra></extra>'
             ))
             
             fig.add_trace(go.Bar(
@@ -738,7 +894,7 @@ def create_timeline_chart(df):
             
             fig.update_layout(
                 title={
-                    'text': '📈 Evolução Temporal do Score',
+                    'text': '📈 Evolução Temporal da Porcentagem de Acerto',
                     'font': {'size': 22, 'color': CARGLASS_DARK_RED, 'family': 'Inter'},
                     'x': 0.5,
                     'xanchor': 'center'
@@ -748,9 +904,10 @@ def create_timeline_chart(df):
                     tickfont=dict(size=11, color=CARGLASS_GRAY, family='Inter')
                 ),
                 yaxis=dict(
-                    title=dict(text='Score Médio', font=dict(color=CARGLASS_RED, size=13, family='Inter')),
+                    title=dict(text='Porcentagem de Acerto', font=dict(color=CARGLASS_RED, size=13, family='Inter')),
                     tickfont=dict(color=CARGLASS_RED, size=11, family='Inter'),
-                    side='left'
+                    side='left',
+                    range=[0, 110]
                 ),
                 yaxis2=dict(
                     title=dict(text='Quantidade de Análises', font=dict(color=CARGLASS_BLUE, size=13, family='Inter')),
@@ -779,7 +936,7 @@ def create_timeline_chart(df):
                 line_dash="dash", 
                 line_color=CARGLASS_GREEN,
                 line_width=2,
-                annotation_text="Meta: 70", 
+                annotation_text="Meta: 70%", 
                 annotation_position="left",
                 annotation_font=dict(size=12, color=CARGLASS_GREEN, family='Inter')
             )
@@ -790,7 +947,6 @@ def create_timeline_chart(df):
             return None
     return None
 
-# Função para criar pontos de melhoria
 def create_improvement_points(df):
     question_names = {
         'Question1': 'Saudação',
@@ -819,49 +975,45 @@ def create_improvement_points(df):
     
     return [(question_names.get(q, q), perf) for q, perf in weak_questions[:3]]
 
-# Função para criar análise comparativa por empresa
 def create_company_comparison(df):
-    if 'Empresas' in df.columns and 'PONTOS_100' in df.columns:
+    if 'Empresas' in df.columns and 'PERCENTUAL' in df.columns:
         company_stats = df.groupby('Empresas').agg({
-            'PONTOS_100': ['mean', 'count'],
+            'PERCENTUAL': ['mean', 'count'],
             'ClientRisk': lambda x: (x == 'BAIXO').sum() / len(x) * 100 if len(x) > 0 else 0
         }).round(1)
         
-        company_stats.columns = ['Score Médio', 'Total Análises', '% Risco Baixo']
-        company_stats = company_stats.sort_values('Score Médio', ascending=False)
+        company_stats.columns = ['Porcentagem Média', 'Total Análises', '% Risco Baixo']
+        company_stats = company_stats.sort_values('Porcentagem Média', ascending=False)
         
-        # Criar gráfico de barras comparativo
         fig = go.Figure()
         
         fig.add_trace(go.Bar(
-            name='Score Médio (100 pts)',
+            name='Porcentagem de Acerto Média',
             x=company_stats.index,
-            y=company_stats['Score Médio'],
+            y=company_stats['Porcentagem Média'],
             marker_color=CARGLASS_RED,
-            text=company_stats['Score Médio'].apply(lambda x: f'{x:.1f}'),
+            text=company_stats['Porcentagem Média'].apply(lambda x: f'{x:.1f}%'),
             textposition='outside',
-            hovertemplate='<b>%{x}</b><br>Score: %{y:.1f}<extra></extra>'
+            hovertemplate='<b>%{x}</b><br>Acerto: %{y:.1f}%<extra></extra>'
         ))
         
         fig.update_layout(
             title='📊 Comparativo de Performance por Empresa',
             xaxis_title='Empresa',
-            yaxis_title='Score Médio (100 pts)',
-            yaxis_range=[0, max(company_stats['Score Médio']) * 1.1],
+            yaxis_title='Porcentagem de Acerto',
+            yaxis_range=[0, max(company_stats['Porcentagem Média']) * 1.1],
             height=400,
             showlegend=False,
             plot_bgcolor='#FAFBFC',
             paper_bgcolor='white'
         )
         
-        # Adicionar linha de meta
         fig.add_hline(y=70, line_dash="dash", line_color=CARGLASS_GREEN, 
-                     annotation_text="Meta: 70", annotation_position="right")
+                     annotation_text="Meta: 70%", annotation_position="right")
         
         return fig, company_stats
     return None, None
 
-# ============= SIDEBAR =============
 with st.sidebar:
     st.markdown("""
     <div style='text-align: center; padding: 25px; background: white; border-radius: 15px; margin-bottom: 25px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);'>
@@ -886,7 +1038,6 @@ with st.sidebar:
             st.markdown("---")
             st.markdown("### 🔍 Filtros")
             
-            # NOVO: Filtro de Empresa
             if 'Empresas' in df.columns:
                 empresas = ['Todas'] + sorted(df['Empresas'].dropna().unique().tolist())
                 selected_empresa = st.selectbox(
@@ -898,7 +1049,6 @@ with st.sidebar:
                 if selected_empresa != 'Todas':
                     df = df[df['Empresas'] == selected_empresa]
             
-            # Filtro de data
             if 'AnalysisDateTime' in df.columns:
                 min_date = df['AnalysisDateTime'].min().date()
                 max_date = df['AnalysisDateTime'].max().date()
@@ -914,7 +1064,6 @@ with st.sidebar:
                     df = df[(df['AnalysisDateTime'].dt.date >= date_range[0]) & 
                            (df['AnalysisDateTime'].dt.date <= date_range[1])]
             
-            # Filtro de agente
             if 'CustomerAgent' in df.columns:
                 agents = ['Todos'] + sorted(df['CustomerAgent'].dropna().unique().tolist())
                 selected_agent = st.selectbox(
@@ -925,7 +1074,6 @@ with st.sidebar:
                 if selected_agent != 'Todos':
                     df = df[df['CustomerAgent'] == selected_agent]
             
-            # Filtro de risco
             if 'ClientRisk' in df.columns:
                 risks = ['Todos'] + sorted(df['ClientRisk'].dropna().unique().tolist())
                 selected_risk = st.selectbox(
@@ -938,11 +1086,31 @@ with st.sidebar:
             
             st.markdown("---")
             
-            # Mostrar informação sobre pontuação
-            if 'PONTOS_100' in df.columns:
-                st.info("📊 Usando escala de 100 pontos")
+            if 'PERCENTUAL' in df.columns:
+                st.info("📊 Usando porcentagem de acerto (0-100%)")
             else:
-                st.warning("⚠️ Coluna 'Avaliação 100 pts' não encontrada. Usando NOTAS convertida.")
+                st.warning("⚠️ Coluna 'Avaliação 100 pts' não encontrada. Convertendo NOTAS para porcentagem.")
+            
+            st.markdown("---")
+            st.markdown("### 📄 Relatório Individual")
+            
+            if 'CustomerAgent' in df.columns:
+                agents_for_pdf = sorted(df['CustomerAgent'].dropna().unique().tolist())
+                selected_agent_pdf = st.selectbox(
+                    "Selecione o Colaborador",
+                    agents_for_pdf,
+                    key="pdf_agent"
+                )
+                
+                if st.button("📄 Gerar Relatório PDF", use_container_width=True):
+                    pdf_buffer = generate_employee_pdf(df, selected_agent_pdf)
+                    st.download_button(
+                        label="💾 Download PDF",
+                        data=pdf_buffer,
+                        file_name=f"relatorio_{selected_agent_pdf.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}.pdf",
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
             
             st.markdown("---")
             st.markdown("### 💾 Exportar Dados")
@@ -964,9 +1132,6 @@ with st.sidebar:
         df = None
         st.info("👆 Carregue um arquivo para começar")
 
-# ============= MAIN CONTENT =============
-
-# Header com gradiente
 st.markdown("""
 <div class='header-gradient'>
     <h1>🔴 Monitor AI</h1>
@@ -976,20 +1141,14 @@ st.markdown("""
 
 if df is not None and len(df) > 0:
     
-    # ============= KPIs PRINCIPAIS =============
     col1, col2, col3, col4 = st.columns(4)
     
     total_analyses = len(df)
     
-    # Usar PONTOS_100 se disponível
-    if 'PONTOS_100' in df.columns:
-        avg_score = df['PONTOS_100'].mean()
-        avg_score_pct = avg_score  # Já está em escala de 100
-        score_label = "Score Médio (100 pts)"
+    if 'PERCENTUAL' in df.columns:
+        avg_score = df['PERCENTUAL'].mean()
     else:
-        avg_score = df['NOTAS'].mean() if 'NOTAS' in df.columns else 0
-        avg_score_pct = (avg_score / 81) * 100
-        score_label = "Score Médio"
+        avg_score = (df['NOTAS'].mean() / 81) * 100 if 'NOTAS' in df.columns else 0
     
     low_risk_pct = (df['ClientRisk'] == 'BAIXO').sum() / len(df) * 100 if 'ClientRisk' in df.columns else 0
     
@@ -998,7 +1157,6 @@ if df is not None and len(df) > 0:
         good_satisfaction = df[df['Client'].isin(['BOA', 'ALTA'])].shape[0]
         satisfaction_pct = (good_satisfaction / len(df)) * 100 if len(df) > 0 else 0
     
-    # Calcular variação semanal
     if 'AnalysisDateTime' in df.columns:
         last_week = df[df['AnalysisDateTime'] >= (datetime.now() - timedelta(days=7))]
         week_count = len(last_week)
@@ -1016,12 +1174,12 @@ if df is not None and len(df) > 0:
         """, unsafe_allow_html=True)
     
     with col2:
-        delta_icon = "⚠️" if avg_score_pct < 70 else "✅"
-        delta_text = f"{delta_icon} {'Abaixo' if avg_score_pct < 70 else 'Acima'} da meta (70)"
+        delta_icon = "⚠️" if avg_score < 70 else "✅"
+        delta_text = f"{delta_icon} {'Abaixo' if avg_score < 70 else 'Acima'} da meta (70%)"
         st.markdown(f"""
         <div class='kpi-card-modern'>
-            <div class='kpi-label'>{score_label}</div>
-            <div class='kpi-value'>{avg_score_pct:.1f}</div>
+            <div class='kpi-label'>Porcentagem de Acerto</div>
+            <div class='kpi-value'>{avg_score:.1f}%</div>
             <div class='kpi-delta'>{delta_text}</div>
         </div>
         """, unsafe_allow_html=True)
@@ -1050,7 +1208,6 @@ if df is not None and len(df) > 0:
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # ============= ANÁLISE POR EMPRESA (NOVO) =============
     if 'Empresas' in df.columns:
         st.markdown("## 🏢 Análise por Empresa")
         
@@ -1066,13 +1223,12 @@ if df is not None and len(df) > 0:
                 st.markdown("### 📋 Estatísticas por Empresa")
                 st.dataframe(
                     company_stats.style.format({
-                        'Score Médio': '{:.1f}',
+                        'Porcentagem Média': '{:.1f}%',
                         '% Risco Baixo': '{:.1f}%'
                     }),
                     use_container_width=True
                 )
     
-    # ============= GRÁFICOS PRINCIPAIS =============
     col1, col2 = st.columns(2)
     
     with col1:
@@ -1089,7 +1245,6 @@ if df is not None and len(df) > 0:
             st.plotly_chart(performance_chart, use_container_width=True)
         st.markdown("</div>", unsafe_allow_html=True)
     
-    # ============= SEGUNDA LINHA DE GRÁFICOS =============
     col1, col2, col3, col4 = st.columns([1.2, 1.5, 1.2, 1.1])
     
     with col1:
@@ -1136,14 +1291,12 @@ if df is not None and len(df) > 0:
         
         st.markdown("</div>", unsafe_allow_html=True)
     
-    # ============= GRÁFICO DE EVOLUÇÃO TEMPORAL =============
     st.markdown("<div class='content-card'>", unsafe_allow_html=True)
     timeline = create_timeline_chart(df)
     if timeline:
         st.plotly_chart(timeline, use_container_width=True)
     st.markdown("</div>", unsafe_allow_html=True)
     
-    # ============= ANÁLISE DETALHADA POR AGENTE =============
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("## 📊 Análise Detalhada por Agente")
     
@@ -1181,12 +1334,12 @@ if df is not None and len(df) > 0:
             with col1:
                 st.metric("Total Ligações", len(agent_df))
             with col2:
-                score_col = 'PONTOS_100' if 'PONTOS_100' in df.columns else 'NOTAS'
-                score_val = agent_df[score_col].mean()
-                st.metric(
-                    "Score Médio" if score_col == 'NOTAS' else "Score (100 pts)",
-                    f"{score_val:.1f}"
-                )
+                score_col = 'PERCENTUAL' if 'PERCENTUAL' in df.columns else 'NOTAS'
+                if score_col == 'NOTAS':
+                    score_val = (agent_df[score_col].mean() / 81) * 100
+                else:
+                    score_val = agent_df[score_col].mean()
+                st.metric("Acerto Médio", f"{score_val:.1f}%")
             with col3:
                 risk_baixo = (agent_df['ClientRisk'] == 'BAIXO').sum() / len(agent_df) * 100 if 'ClientRisk' in agent_df.columns else 0
                 st.metric("Risco Baixo", f"{risk_baixo:.1f}%")
@@ -1194,7 +1347,6 @@ if df is not None and len(df) > 0:
                 satisfaction = agent_df[agent_df['Client'].isin(['BOA', 'ALTA'])].shape[0] / len(agent_df) * 100 if 'Client' in agent_df.columns else 0
                 st.metric("Satisfação", f"{satisfaction:.1f}%")
             
-            # Gráfico de performance por questão
             questions_performance = []
             for i in range(1, 13):
                 q = f'Question{i}'
@@ -1226,7 +1378,7 @@ if df is not None and len(df) > 0:
                     title=f'Performance de {selected_agent}',
                     xaxis=dict(
                         range=[0, 110],
-                        title=dict(text='Performance (%)', font=dict(size=13, color=CARGLASS_GRAY, family='Inter')),
+                        title=dict(text='Porcentagem de Acerto', font=dict(size=13, color=CARGLASS_GRAY, family='Inter')),
                         tickfont=dict(size=11, color=CARGLASS_GRAY, family='Inter')
                     ),
                     yaxis=dict(
@@ -1256,7 +1408,7 @@ if df is not None and len(df) > 0:
     with tab2:
         st.markdown("<div class='content-card'>", unsafe_allow_html=True)
         
-        score_col = 'PONTOS_100' if 'PONTOS_100' in df.columns else 'NOTAS'
+        score_col = 'PERCENTUAL' if 'PERCENTUAL' in df.columns else 'NOTAS'
         
         if 'CustomerAgent' in df.columns and score_col in df.columns:
             agent_comparison = df.groupby('CustomerAgent').agg({
@@ -1265,23 +1417,25 @@ if df is not None and len(df) > 0:
                 'ClientRisk': lambda x: (x == 'BAIXO').sum() / len(x) * 100 if len(x) > 0 else 0
             }).round(1)
             
-            agent_comparison.columns = ['Score Médio', 'Total Ligações', '% Risco Baixo']
-            agent_comparison = agent_comparison.sort_values('Score Médio', ascending=False)
+            if score_col == 'NOTAS':
+                agent_comparison[score_col] = (agent_comparison[score_col] / 81) * 100
             
-            # Gráfico de dispersão
+            agent_comparison.columns = ['Porcentagem Média', 'Total Ligações', '% Risco Baixo']
+            agent_comparison = agent_comparison.sort_values('Porcentagem Média', ascending=False)
+            
             fig = go.Figure()
             
             fig.add_trace(go.Scatter(
                 x=agent_comparison['Total Ligações'],
-                y=agent_comparison['Score Médio'],
+                y=agent_comparison['Porcentagem Média'],
                 mode='markers+text',
                 marker=dict(
                     size=agent_comparison['% Risco Baixo'] * 0.8,
-                    color=agent_comparison['Score Médio'],
+                    color=agent_comparison['Porcentagem Média'],
                     colorscale=[[0, CARGLASS_RED], [0.5, CARGLASS_YELLOW], [1, CARGLASS_GREEN]],
                     showscale=True,
                     colorbar=dict(
-                        title=dict(text="Score<br>Médio", font=dict(size=11, family='Inter')),
+                        title=dict(text="Acerto<br>Médio (%)", font=dict(size=11, family='Inter')),
                         tickfont=dict(size=10, family='Inter')
                     ),
                     line=dict(width=2, color='white')
@@ -1289,7 +1443,7 @@ if df is not None and len(df) > 0:
                 text=[name.split()[0] for name in agent_comparison.index],
                 textposition='top center',
                 textfont=dict(size=9, color=CARGLASS_DARK_RED, family='Inter'),
-                hovertemplate='<b>%{text}</b><br>Ligações: %{x}<br>Score: %{y:.1f}<br>Risco Baixo: %{marker.size:.1f}%<extra></extra>'
+                hovertemplate='<b>%{text}</b><br>Ligações: %{x}<br>Acerto: %{y:.1f}%<br>Risco Baixo: %{marker.size:.1f}%<extra></extra>'
             ))
             
             fig.update_layout(
@@ -1299,9 +1453,10 @@ if df is not None and len(df) > 0:
                     tickfont=dict(size=11, color=CARGLASS_GRAY, family='Inter')
                 ),
                 yaxis=dict(
-                    title=dict(text='Score Médio (100 pts)' if score_col == 'PONTOS_100' else 'Score Médio', 
+                    title=dict(text='Porcentagem de Acerto', 
                               font=dict(size=13, color=CARGLASS_GRAY, family='Inter')),
-                    tickfont=dict(size=11, color=CARGLASS_GRAY, family='Inter')
+                    tickfont=dict(size=11, color=CARGLASS_GRAY, family='Inter'),
+                    range=[0, 110]
                 ),
                 height=500,
                 plot_bgcolor='#FAFBFC',
@@ -1315,16 +1470,15 @@ if df is not None and len(df) > 0:
                 line_dash="dash", 
                 line_color=CARGLASS_GREEN,
                 line_width=2,
-                annotation_text="Meta Score", 
+                annotation_text="Meta: 70%", 
                 annotation_position="right",
                 annotation_font=dict(size=12, color=CARGLASS_GREEN, family='Inter')
             )
             
             st.plotly_chart(fig, use_container_width=True)
             
-            # Tabela de comparação
             st.dataframe(
-                agent_comparison.style.format({'Score Médio': '{:.1f}', '% Risco Baixo': '{:.1f}%'}),
+                agent_comparison.style.format({'Porcentagem Média': '{:.1f}%', '% Risco Baixo': '{:.1f}%'}),
                 use_container_width=True,
                 height=400
             )
@@ -1335,14 +1489,13 @@ if df is not None and len(df) > 0:
         st.markdown("<div class='content-card'>", unsafe_allow_html=True)
         st.markdown("### 📋 Dados Detalhados")
         
-        # Adicionar coluna Empresas se existir
         display_columns = ['AnalysisDateTime', 'CustomerAgent', 'Client', 'ClientRisk', 'ClientOutcome']
         
         if 'Empresas' in df.columns:
             display_columns.insert(1, 'Empresas')
         
-        if 'PONTOS_100' in df.columns:
-            display_columns.append('PONTOS_100')
+        if 'PERCENTUAL' in df.columns:
+            display_columns.append('PERCENTUAL')
         elif 'NOTAS' in df.columns:
             display_columns.append('NOTAS')
         
@@ -1360,16 +1513,29 @@ if df is not None and len(df) > 0:
         
         with col1:
             st.markdown("### 📊 Estatísticas Gerais")
-            score_col = 'PONTOS_100' if 'PONTOS_100' in df.columns else 'NOTAS'
+            score_col = 'PERCENTUAL' if 'PERCENTUAL' in df.columns else 'NOTAS'
+            
+            if score_col == 'NOTAS':
+                avg_val = (df[score_col].mean() / 81) * 100
+                med_val = (df[score_col].median() / 81) * 100
+                std_val = (df[score_col].std() / 81) * 100
+                min_val = (df[score_col].min() / 81) * 100
+                max_val = (df[score_col].max() / 81) * 100
+            else:
+                avg_val = df[score_col].mean()
+                med_val = df[score_col].median()
+                std_val = df[score_col].std()
+                min_val = df[score_col].min()
+                max_val = df[score_col].max()
             
             stats_df = pd.DataFrame({
-                'Métrica': ['Score Médio', 'Score Mediano', 'Desvio Padrão', 'Score Mínimo', 'Score Máximo'],
+                'Métrica': ['Acerto Médio', 'Acerto Mediano', 'Desvio Padrão', 'Acerto Mínimo', 'Acerto Máximo'],
                 'Valor': [
-                    f"{df[score_col].mean():.2f}",
-                    f"{df[score_col].median():.2f}",
-                    f"{df[score_col].std():.2f}",
-                    f"{df[score_col].min():.2f}",
-                    f"{df[score_col].max():.2f}"
+                    f"{avg_val:.2f}%",
+                    f"{med_val:.2f}%",
+                    f"{std_val:.2f}%",
+                    f"{min_val:.2f}%",
+                    f"{max_val:.2f}%"
                 ]
             })
             st.dataframe(stats_df, use_container_width=True, hide_index=True)
@@ -1377,23 +1543,29 @@ if df is not None and len(df) > 0:
         with col2:
             st.markdown("### 🏆 Rankings")
             if 'CustomerAgent' in df.columns:
-                score_col = 'PONTOS_100' if 'PONTOS_100' in df.columns else 'NOTAS'
-                best_agents = df.groupby('CustomerAgent')[score_col].mean().sort_values(ascending=False).head(3)
-                worst_agents = df.groupby('CustomerAgent')[score_col].mean().sort_values(ascending=True).head(3)
+                score_col = 'PERCENTUAL' if 'PERCENTUAL' in df.columns else 'NOTAS'
+                
+                if score_col == 'NOTAS':
+                    agent_scores = df.groupby('CustomerAgent')[score_col].mean()
+                    agent_scores = (agent_scores / 81) * 100
+                else:
+                    agent_scores = df.groupby('CustomerAgent')[score_col].mean()
+                
+                best_agents = agent_scores.sort_values(ascending=False).head(3)
+                worst_agents = agent_scores.sort_values(ascending=True).head(3)
                 
                 st.markdown("**Top 3 Melhores:**")
                 for i, (agent, score) in enumerate(best_agents.items(), 1):
                     medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉"
-                    st.markdown(f"{medal} {agent}: {score:.1f}")
+                    st.markdown(f"{medal} {agent}: {score:.1f}%")
                 
                 st.markdown("<br>**3 Para Melhorar:**", unsafe_allow_html=True)
                 for agent, score in worst_agents.items():
-                    st.markdown(f"📈 {agent}: {score:.1f}")
+                    st.markdown(f"📈 {agent}: {score:.1f}%")
         
         st.markdown("</div>", unsafe_allow_html=True)
 
 else:
-    # Tela de boas-vindas
     st.info("📁 Por favor, carregue um arquivo Excel na barra lateral para visualizar o dashboard")
     
     col1, col2, col3 = st.columns(3)
