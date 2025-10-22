@@ -547,7 +547,7 @@ def create_performance_chart(df):
             text=[f'{round(p)}%' for p in performance],
             textposition='outside',
             textfont=dict(size=12, color=CARGLASS_DARK_RED, family='Inter', weight='bold'),
-            hovertemplate='<b>%{x}</b><br>Acerto: %{round(y)}%<extra></extra>'
+            hovertemplate='<b>%{x}</b><br>Acerto: %{y:.0f}%<extra></extra>'
         )
     ])
     
@@ -989,7 +989,7 @@ def create_timeline_chart(df):
                 line=dict(color=CARGLASS_RED, width=3),
                 marker=dict(size=8, color=CARGLASS_RED, line=dict(color='white', width=2)),
                 yaxis='y',
-                hovertemplate='<b>Data: %{x|%d/%m/%Y}</b><br>Acerto: %{round(y)}%<extra></extra>'
+                hovertemplate='<b>Data: %{x|%d/%m/%Y}</b><br>Acerto: %{y:.0f}%<extra></extra>'
             ))
             
             fig.add_trace(go.Bar(
@@ -1588,7 +1588,7 @@ if df is not None and len(df) > 0:
                 text=[name.split()[0] for name in agent_comparison.index],
                 textposition='top center',
                 textfont=dict(size=9, color=CARGLASS_DARK_RED, family='Inter'),
-                hovertemplate='<b>%{text}</b><br>Ligações: %{x}<br>Acerto: %{round(y)}%<br>Risco Baixo: %{marker.size:.1f}%<extra></extra>'
+                hovertemplate='<b>%{text}</b><br>Ligações: %{x}<br>Acerto: %{y:.0f}%<br>Risco Baixo: %{marker.size:.1f}%<extra></extra>'
             ))
             
             fig.update_layout(
