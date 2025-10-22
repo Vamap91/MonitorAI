@@ -280,6 +280,10 @@ def load_data(file):
             if 'PERCENTUAL' in df.columns:
                 df = df[(df['PERCENTUAL'].notna()) & (df['PERCENTUAL'] >= 19.99)]
             
+            # Filtrar registros com ClientRisk Indeterminado
+            if 'ClientRisk' in df.columns:
+                df = df[df['ClientRisk'] != 'INDETERMINADO']
+            
             return df
         else:
             st.error("A planilha 'Consulta1' não foi encontrada no arquivo.")
@@ -587,12 +591,16 @@ def create_satisfaction_donut(df):
     }
     
     if 'Client' in df.columns:
-        satisfaction_counts = df['Client'].value_counts()
+        # Filtrar apenas as 4 opções válidas
+        valid_options = ['NEUTRA', 'SATISFEITO', 'SATISFEITA', 'ALTA', 'INSATISFEITO']
+        df_filtered = df[df['Client'].str.upper().isin(valid_options)]
+        
+        satisfaction_counts = df_filtered['Client'].value_counts()
         
         labels = []
         for label in satisfaction_counts.index:
             if pd.isna(label):
-                labels.append('Não definido')
+                continue
             else:
                 mapped = satisfaction_map.get(str(label).strip().upper(), str(label).strip().title())
                 labels.append(mapped)
@@ -1256,6 +1264,17 @@ if df is not None and len(df) > 0:
         risk_chart = create_risk_analysis(df)
         if risk_chart:
             st.plotly_chart(risk_chart, use_container_width=True)
+        
+        # Tabela de casos de Risco Alto
+        if 'ClientRisk' in df.columns:
+            required_cols = ['Mp3FileName', 'Justification', 'CustomerAgent']
+            if all(col in df.columns for col in required_cols):
+                high_risk_df = df[df['ClientRisk'] == 'ALTO'][required_cols].copy()
+                if not high_risk_df.empty:
+                    st.markdown("<h4 style='color: #DC0A0A; margin-top: 20px;'>🚨 Casos de Risco Alto</h4>", unsafe_allow_html=True)
+                    high_risk_df.columns = ['Gravação (MP3)', 'Justificativa', 'Agente']
+                    st.dataframe(high_risk_df, use_container_width=True, hide_index=True)
+        
         st.markdown("</div>", unsafe_allow_html=True)
     
     with col2:
