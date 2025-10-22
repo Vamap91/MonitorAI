@@ -276,6 +276,10 @@ def load_data(file):
             if 'PERCENTUAL' not in df.columns and 'NOTAS' in df.columns:
                 df['PERCENTUAL'] = (df['NOTAS'] / 81) * 100
             
+            # Filtrar registros com PERCENTUAL vazio ou menor que 19.99
+            if 'PERCENTUAL' in df.columns:
+                df = df[(df['PERCENTUAL'].notna()) & (df['PERCENTUAL'] >= 19.99)]
+            
             return df
         else:
             st.error("A planilha 'Consulta1' não foi encontrada no arquivo.")
