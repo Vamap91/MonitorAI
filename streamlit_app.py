@@ -150,58 +150,6 @@ custom_css = """
         gap: 10px;
     }
     
-    /* Sidebar toggle button */
-    .sidebar-toggle {
-        position: fixed;
-        left: 10px;
-        top: 80px;
-        z-index: 999;
-        background: """ + CARGLASS_RED + """;
-        color: white;
-        border: none;
-        border-radius: 50%;
-        width: 45px;
-        height: 45px;
-        cursor: pointer;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 20px;
-        transition: all 0.3s ease;
-    }
-    
-    .sidebar-toggle:hover {
-        background: """ + CARGLASS_DARK_RED + """;
-        transform: scale(1.1);
-    }
-    
-    /* Métricas Streamlit customizadas */
-    div[data-testid="metric-container"] {
-        background: transparent;
-        padding: 0;
-    }
-    
-    div[data-testid="metric-container"] > label {
-        color: rgba(255,255,255,0.9) !important;
-        font-weight: 600 !important;
-        font-size: 13px !important;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-    
-    div[data-testid="metric-container"] > div[data-testid="stMetricValue"] {
-        color: white !important;
-        font-weight: 700 !important;
-        font-size: 42px !important;
-        text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
-    }
-    
-    div[data-testid="metric-container"] > div[data-testid="stMetricDelta"] {
-        color: rgba(255,255,255,0.85) !important;
-        font-size: 13px !important;
-    }
-    
     /* Sidebar styling */
     section[data-testid="stSidebar"] {
         background: linear-gradient(180deg, """ + CARGLASS_RED + """ 0%, """ + CARGLASS_DARK_RED + """ 100%);
@@ -256,7 +204,6 @@ custom_css = """
         border-radius: 12px;
         overflow: hidden;
     }
-
     
     /* Sidebar labels e inputs */
     section[data-testid="stSidebar"] label {
@@ -277,6 +224,32 @@ custom_css = """
     section[data-testid="stSidebar"] .stMarkdown p {
         color: white !important;
     }
+    
+    /* Métricas Streamlit customizadas */
+    div[data-testid="metric-container"] {
+        background: transparent;
+        padding: 0;
+    }
+    
+    div[data-testid="metric-container"] > label {
+        color: rgba(255,255,255,0.9) !important;
+        font-weight: 600 !important;
+        font-size: 13px !important;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    
+    div[data-testid="metric-container"] > div[data-testid="stMetricValue"] {
+        color: white !important;
+        font-weight: 700 !important;
+        font-size: 42px !important;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+    }
+    
+    div[data-testid="metric-container"] > div[data-testid="stMetricDelta"] {
+        color: rgba(255,255,255,0.85) !important;
+        font-size: 13px !important;
+    }
 </style>
 """
 
@@ -289,8 +262,25 @@ def load_data(file):
         xls = pd.ExcelFile(file)
         if 'Consulta1' in xls.sheet_names:
             df = pd.read_excel(file, sheet_name='Consulta1')
-            df['AnalysisDateTime'] = pd.to_datetime(df['AnalysisDateTime'])
-            df['CallDate'] = pd.to_datetime(df['CallDate'])
+            
+            # Converter colunas de data
+            if 'AnalysisDateTime' in df.columns:
+                df['AnalysisDateTime'] = pd.to_datetime(df['AnalysisDateTime'])
+            if 'CallDate' in df.columns:
+                df['CallDate'] = pd.to_datetime(df['CallDate'])
+            
+            # Verificar e processar coluna de avaliação 100 pts
+            avaliacao_cols = ['Avaliação 100 pts', 'Avaliacao 100 pts', 'Avaliação100pts', 'Avaliacao100pts']
+            for col in avaliacao_cols:
+                if col in df.columns:
+                    df['PONTOS_100'] = pd.to_numeric(df[col], errors='coerce')
+                    break
+            
+            # Se não encontrar a coluna de 100 pontos, usar NOTAS se existir
+            if 'PONTOS_100' not in df.columns and 'NOTAS' in df.columns:
+                # Converter NOTAS (escala de 81) para escala de 100
+                df['PONTOS_100'] = (df['NOTAS'] / 81) * 100
+            
             return df
         else:
             st.error("A planilha 'Consulta1' não foi encontrada no arquivo.")
@@ -417,23 +407,22 @@ def create_satisfaction_donut(df):
         'INSATISFEITO': 'Insatisfeito'
     }
     
-    # Mapa de cores semânticas (do verde forte ao vermelho forte)
+    # Mapa de cores semânticas
     color_map = {
-        'Alta': '#00A86B',           # Verde forte
-        'Boa': '#28A745',            # Verde médio forte
-        'Satisfeita': '#5CB85C',     # Verde normal
-        'Satisfeito': '#5CB85C',     # Verde normal
-        'Média': '#90EE90',          # Verde claro
-        'Moderada': '#FFC107',       # Amarelo
-        'Neutra': '#FFD700',         # Amarelo ouro
-        'Baixa': '#FF6B6B',          # Vermelho claro
-        'Insatisfeito': '#DC0A0A'    # Vermelho escuro (Carglass)
+        'Alta': '#00A86B',
+        'Boa': '#28A745',
+        'Satisfeita': '#5CB85C',
+        'Satisfeito': '#5CB85C',
+        'Média': '#90EE90',
+        'Moderada': '#FFC107',
+        'Neutra': '#FFD700',
+        'Baixa': '#FF6B6B',
+        'Insatisfeito': '#DC0A0A'
     }
     
     if 'Client' in df.columns:
         satisfaction_counts = df['Client'].value_counts()
         
-        # Mapear labels
         labels = []
         for label in satisfaction_counts.index:
             if pd.isna(label):
@@ -443,8 +432,6 @@ def create_satisfaction_donut(df):
                 labels.append(mapped)
         
         values = satisfaction_counts.values
-        
-        # Aplicar cores baseadas no mapa semântico
         colors_list = [color_map.get(label, '#6C757D') for label in labels]
         
         fig = go.Figure(data=[go.Pie(
@@ -485,7 +472,6 @@ def create_satisfaction_donut(df):
         
         return fig
     return None
-
 
 # Função para criar análise de risco
 def create_risk_analysis(df):
@@ -552,18 +538,21 @@ def create_risk_analysis(df):
         return fig
     return None
 
-# Função para criar ranking de agentes
+# Função para criar ranking de agentes COM NOVA PONTUAÇÃO
 def create_agent_ranking(df, top_n=5):
-    if 'CustomerAgent' in df.columns and 'NOTAS' in df.columns:
+    # Usar PONTOS_100 se disponível, senão usar NOTAS
+    score_column = 'PONTOS_100' if 'PONTOS_100' in df.columns else 'NOTAS'
+    
+    if 'CustomerAgent' in df.columns and score_column in df.columns:
         agent_scores = df.groupby('CustomerAgent').agg({
-            'NOTAS': 'mean',
+            score_column: 'mean',
             'IdAnalysis': 'count'
         }).round(1)
         
         agent_scores.columns = ['Score Médio', 'Total Ligações']
         agent_scores = agent_scores.sort_values('Score Médio', ascending=False).head(top_n)
         
-        # Formatar nomes (primeiro e último nome)
+        # Formatar nomes
         agent_names = []
         for name in agent_scores.index:
             parts = name.split()
@@ -591,15 +580,18 @@ def create_agent_ranking(df, top_n=5):
             hovertemplate='<b>%{y}</b><br>Score: %{x:.1f}<br>Ligações: %{text}<extra></extra>'
         ))
         
+        # Ajustar range máximo baseado no tipo de pontuação
+        max_range = 120 if score_column == 'PONTOS_100' else max(agent_scores['Score Médio']) * 1.2
+        
         fig.update_layout(
             title={
-                'text': '👥 Top 5 Agentes por Score',
+                'text': '👥 Top 5 Agentes por Score (100 pts)' if score_column == 'PONTOS_100' else '👥 Top 5 Agentes por Score',
                 'font': {'size': 20, 'color': CARGLASS_DARK_RED, 'family': 'Inter'},
                 'x': 0.5,
                 'xanchor': 'center'
             },
             xaxis=dict(
-                range=[0, max(agent_scores['Score Médio']) * 1.2],
+                range=[0, max_range],
                 title=dict(text='Score Médio', font=dict(size=13, color=CARGLASS_GRAY, family='Inter')),
                 tickfont=dict(size=11, color=CARGLASS_GRAY, family='Inter')
             ),
@@ -618,11 +610,13 @@ def create_agent_ranking(df, top_n=5):
         return fig
     return None
 
-# Função para criar gráfico de bottom 5 agentes (necessitam treinamento)
+# Função para criar gráfico de bottom 5 agentes COM NOVA PONTUAÇÃO
 def create_bottom_performers(df, bottom_n=5):
-    if 'CustomerAgent' in df.columns and 'NOTAS' in df.columns:
+    score_column = 'PONTOS_100' if 'PONTOS_100' in df.columns else 'NOTAS'
+    
+    if 'CustomerAgent' in df.columns and score_column in df.columns:
         agent_scores = df.groupby('CustomerAgent').agg({
-            'NOTAS': 'mean',
+            score_column: 'mean',
             'IdAnalysis': 'count'
         }).round(1)
         
@@ -634,7 +628,7 @@ def create_bottom_performers(df, bottom_n=5):
         # Pegar os 5 piores
         agent_scores = agent_scores.sort_values('Score Médio', ascending=True).head(bottom_n)
         
-        # Formatar nomes (primeiro e último nome)
+        # Formatar nomes
         agent_names = []
         for name in agent_scores.index:
             parts = name.split()
@@ -643,7 +637,6 @@ def create_bottom_performers(df, bottom_n=5):
             else:
                 agent_names.append(parts[0])
         
-        # Cores em gradiente de vermelho (pior) para laranja
         colors_agents = [CARGLASS_RED if i == 0 else CARGLASS_ORANGE for i in range(len(agent_names))]
         
         fig = go.Figure()
@@ -663,6 +656,8 @@ def create_bottom_performers(df, bottom_n=5):
             hovertemplate='<b>%{y}</b><br>Score: %{x:.1f}<br>Ligações: %{text}<extra></extra>'
         ))
         
+        max_range = 120 if score_column == 'PONTOS_100' else max(agent_scores['Score Médio']) * 1.3
+        
         fig.update_layout(
             title={
                 'text': '⚠️ Necessitam Treinamento',
@@ -672,7 +667,7 @@ def create_bottom_performers(df, bottom_n=5):
             },
             xaxis=dict(
                 title=dict(text='Score Médio', font=dict(size=13, color=CARGLASS_GRAY, family='Inter')),
-                range=[0, max(agent_scores['Score Médio']) * 1.3],
+                range=[0, max_range],
                 tickfont=dict(size=11, color=CARGLASS_GRAY, family='Inter')
             ),
             yaxis=dict(
@@ -701,19 +696,18 @@ def create_bottom_performers(df, bottom_n=5):
         return fig
     return None
 
-
-# Função para criar gráfico de timeline (CORRIGIDA)
+# Função para criar gráfico de timeline COM NOVA PONTUAÇÃO
 def create_timeline_chart(df):
-    if 'AnalysisDateTime' in df.columns and 'NOTAS' in df.columns:
+    score_column = 'PONTOS_100' if 'PONTOS_100' in df.columns else 'NOTAS'
+    
+    if 'AnalysisDateTime' in df.columns and score_column in df.columns:
         try:
-            # Verificar se há dados suficientes
             if len(df) == 0:
                 return None
             
-            df_timeline = df.set_index('AnalysisDateTime').resample('D')['NOTAS'].agg(['mean', 'count']).reset_index()
+            df_timeline = df.set_index('AnalysisDateTime').resample('D')[score_column].agg(['mean', 'count']).reset_index()
             df_timeline.columns = ['Data', 'Score Médio', 'Quantidade']
             
-            # Remover linhas com valores nulos
             df_timeline = df_timeline.dropna()
             
             if len(df_timeline) == 0:
@@ -721,19 +715,17 @@ def create_timeline_chart(df):
             
             fig = go.Figure()
             
-            # Adicionar linha de score médio
             fig.add_trace(go.Scatter(
                 x=df_timeline['Data'],
                 y=df_timeline['Score Médio'],
                 mode='lines+markers',
-                name='Score Médio',
+                name='Score Médio (100 pts)' if score_column == 'PONTOS_100' else 'Score Médio',
                 line=dict(color=CARGLASS_RED, width=3),
                 marker=dict(size=8, color=CARGLASS_RED, line=dict(color='white', width=2)),
                 yaxis='y',
                 hovertemplate='<b>Data: %{x|%d/%m/%Y}</b><br>Score: %{y:.1f}<extra></extra>'
             ))
             
-            # Adicionar barras de quantidade
             fig.add_trace(go.Bar(
                 x=df_timeline['Data'],
                 y=df_timeline['Quantidade'],
@@ -744,7 +736,6 @@ def create_timeline_chart(df):
                 hovertemplate='<b>Data: %{x|%d/%m/%Y}</b><br>Análises: %{y}<extra></extra>'
             ))
             
-            # Layout com dois eixos Y
             fig.update_layout(
                 title={
                     'text': '📈 Evolução Temporal do Score',
@@ -783,7 +774,6 @@ def create_timeline_chart(df):
                 margin=dict(l=60, r=60, t=80, b=60)
             )
             
-            # Adicionar linha de meta
             fig.add_hline(
                 y=70, 
                 line_dash="dash", 
@@ -829,6 +819,48 @@ def create_improvement_points(df):
     
     return [(question_names.get(q, q), perf) for q, perf in weak_questions[:3]]
 
+# Função para criar análise comparativa por empresa
+def create_company_comparison(df):
+    if 'Empresas' in df.columns and 'PONTOS_100' in df.columns:
+        company_stats = df.groupby('Empresas').agg({
+            'PONTOS_100': ['mean', 'count'],
+            'ClientRisk': lambda x: (x == 'BAIXO').sum() / len(x) * 100 if len(x) > 0 else 0
+        }).round(1)
+        
+        company_stats.columns = ['Score Médio', 'Total Análises', '% Risco Baixo']
+        company_stats = company_stats.sort_values('Score Médio', ascending=False)
+        
+        # Criar gráfico de barras comparativo
+        fig = go.Figure()
+        
+        fig.add_trace(go.Bar(
+            name='Score Médio (100 pts)',
+            x=company_stats.index,
+            y=company_stats['Score Médio'],
+            marker_color=CARGLASS_RED,
+            text=company_stats['Score Médio'].apply(lambda x: f'{x:.1f}'),
+            textposition='outside',
+            hovertemplate='<b>%{x}</b><br>Score: %{y:.1f}<extra></extra>'
+        ))
+        
+        fig.update_layout(
+            title='📊 Comparativo de Performance por Empresa',
+            xaxis_title='Empresa',
+            yaxis_title='Score Médio (100 pts)',
+            yaxis_range=[0, max(company_stats['Score Médio']) * 1.1],
+            height=400,
+            showlegend=False,
+            plot_bgcolor='#FAFBFC',
+            paper_bgcolor='white'
+        )
+        
+        # Adicionar linha de meta
+        fig.add_hline(y=70, line_dash="dash", line_color=CARGLASS_GREEN, 
+                     annotation_text="Meta: 70", annotation_position="right")
+        
+        return fig, company_stats
+    return None, None
+
 # ============= SIDEBAR =============
 with st.sidebar:
     st.markdown("""
@@ -854,13 +886,25 @@ with st.sidebar:
             st.markdown("---")
             st.markdown("### 🔍 Filtros")
             
+            # NOVO: Filtro de Empresa
+            if 'Empresas' in df.columns:
+                empresas = ['Todas'] + sorted(df['Empresas'].dropna().unique().tolist())
+                selected_empresa = st.selectbox(
+                    "🏢 Empresa",
+                    empresas,
+                    help="Filtrar por empresa específica"
+                )
+                
+                if selected_empresa != 'Todas':
+                    df = df[df['Empresas'] == selected_empresa]
+            
             # Filtro de data
             if 'AnalysisDateTime' in df.columns:
                 min_date = df['AnalysisDateTime'].min().date()
                 max_date = df['AnalysisDateTime'].max().date()
                 
                 date_range = st.date_input(
-                    "Período de Análise",
+                    "📅 Período de Análise",
                     value=(min_date, max_date),
                     min_value=min_date,
                     max_value=max_date
@@ -872,19 +916,33 @@ with st.sidebar:
             
             # Filtro de agente
             if 'CustomerAgent' in df.columns:
-                agents = ['Todos'] + sorted(df['CustomerAgent'].unique().tolist())
-                selected_agent = st.selectbox("Agente", agents)
+                agents = ['Todos'] + sorted(df['CustomerAgent'].dropna().unique().tolist())
+                selected_agent = st.selectbox(
+                    "👤 Agente",
+                    agents
+                )
                 
                 if selected_agent != 'Todos':
                     df = df[df['CustomerAgent'] == selected_agent]
             
             # Filtro de risco
             if 'ClientRisk' in df.columns:
-                risks = ['Todos'] + sorted(df['ClientRisk'].unique().tolist())
-                selected_risk = st.selectbox("Nível de Risco", risks)
+                risks = ['Todos'] + sorted(df['ClientRisk'].dropna().unique().tolist())
+                selected_risk = st.selectbox(
+                    "⚠️ Nível de Risco",
+                    risks
+                )
                 
                 if selected_risk != 'Todos':
                     df = df[df['ClientRisk'] == selected_risk]
+            
+            st.markdown("---")
+            
+            # Mostrar informação sobre pontuação
+            if 'PONTOS_100' in df.columns:
+                st.info("📊 Usando escala de 100 pontos")
+            else:
+                st.warning("⚠️ Coluna 'Avaliação 100 pts' não encontrada. Usando NOTAS convertida.")
             
             st.markdown("---")
             st.markdown("### 💾 Exportar Dados")
@@ -922,8 +980,16 @@ if df is not None and len(df) > 0:
     col1, col2, col3, col4 = st.columns(4)
     
     total_analyses = len(df)
-    avg_score = df['NOTAS'].mean() if 'NOTAS' in df.columns else 0
-    avg_score_pct = (avg_score / 81) * 100  # Converter para percentual (81 é o máximo)
+    
+    # Usar PONTOS_100 se disponível
+    if 'PONTOS_100' in df.columns:
+        avg_score = df['PONTOS_100'].mean()
+        avg_score_pct = avg_score  # Já está em escala de 100
+        score_label = "Score Médio (100 pts)"
+    else:
+        avg_score = df['NOTAS'].mean() if 'NOTAS' in df.columns else 0
+        avg_score_pct = (avg_score / 81) * 100
+        score_label = "Score Médio"
     
     low_risk_pct = (df['ClientRisk'] == 'BAIXO').sum() / len(df) * 100 if 'ClientRisk' in df.columns else 0
     
@@ -950,12 +1016,12 @@ if df is not None and len(df) > 0:
         """, unsafe_allow_html=True)
     
     with col2:
-        delta_icon = "⚠️" if avg_score < 70 else "✅"
-        delta_text = f"{delta_icon} {'Abaixo' if avg_score < 70 else 'Acima'} da meta (70)"
+        delta_icon = "⚠️" if avg_score_pct < 70 else "✅"
+        delta_text = f"{delta_icon} {'Abaixo' if avg_score_pct < 70 else 'Acima'} da meta (70)"
         st.markdown(f"""
         <div class='kpi-card-modern'>
-            <div class='kpi-label'>Score Médio</div>
-            <div class='kpi-value'>{avg_score:.1f}</div>
+            <div class='kpi-label'>{score_label}</div>
+            <div class='kpi-value'>{avg_score_pct:.1f}</div>
             <div class='kpi-delta'>{delta_text}</div>
         </div>
         """, unsafe_allow_html=True)
@@ -983,6 +1049,28 @@ if df is not None and len(df) > 0:
         """, unsafe_allow_html=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
+    
+    # ============= ANÁLISE POR EMPRESA (NOVO) =============
+    if 'Empresas' in df.columns:
+        st.markdown("## 🏢 Análise por Empresa")
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            company_chart, company_stats = create_company_comparison(df)
+            if company_chart:
+                st.plotly_chart(company_chart, use_container_width=True)
+        
+        with col2:
+            if company_stats is not None:
+                st.markdown("### 📋 Estatísticas por Empresa")
+                st.dataframe(
+                    company_stats.style.format({
+                        'Score Médio': '{:.1f}',
+                        '% Risco Baixo': '{:.1f}%'
+                    }),
+                    use_container_width=True
+                )
     
     # ============= GRÁFICOS PRINCIPAIS =============
     col1, col2 = st.columns(2)
@@ -1093,7 +1181,12 @@ if df is not None and len(df) > 0:
             with col1:
                 st.metric("Total Ligações", len(agent_df))
             with col2:
-                st.metric("Score Médio", f"{agent_df['NOTAS'].mean():.1f}")
+                score_col = 'PONTOS_100' if 'PONTOS_100' in df.columns else 'NOTAS'
+                score_val = agent_df[score_col].mean()
+                st.metric(
+                    "Score Médio" if score_col == 'NOTAS' else "Score (100 pts)",
+                    f"{score_val:.1f}"
+                )
             with col3:
                 risk_baixo = (agent_df['ClientRisk'] == 'BAIXO').sum() / len(agent_df) * 100 if 'ClientRisk' in agent_df.columns else 0
                 st.metric("Risco Baixo", f"{risk_baixo:.1f}%")
@@ -1163,9 +1256,11 @@ if df is not None and len(df) > 0:
     with tab2:
         st.markdown("<div class='content-card'>", unsafe_allow_html=True)
         
-        if 'CustomerAgent' in df.columns and 'NOTAS' in df.columns:
+        score_col = 'PONTOS_100' if 'PONTOS_100' in df.columns else 'NOTAS'
+        
+        if 'CustomerAgent' in df.columns and score_col in df.columns:
             agent_comparison = df.groupby('CustomerAgent').agg({
-                'NOTAS': 'mean',
+                score_col: 'mean',
                 'IdAnalysis': 'count',
                 'ClientRisk': lambda x: (x == 'BAIXO').sum() / len(x) * 100 if len(x) > 0 else 0
             }).round(1)
@@ -1204,7 +1299,8 @@ if df is not None and len(df) > 0:
                     tickfont=dict(size=11, color=CARGLASS_GRAY, family='Inter')
                 ),
                 yaxis=dict(
-                    title=dict(text='Score Médio', font=dict(size=13, color=CARGLASS_GRAY, family='Inter')),
+                    title=dict(text='Score Médio (100 pts)' if score_col == 'PONTOS_100' else 'Score Médio', 
+                              font=dict(size=13, color=CARGLASS_GRAY, family='Inter')),
                     tickfont=dict(size=11, color=CARGLASS_GRAY, family='Inter')
                 ),
                 height=500,
@@ -1239,7 +1335,17 @@ if df is not None and len(df) > 0:
         st.markdown("<div class='content-card'>", unsafe_allow_html=True)
         st.markdown("### 📋 Dados Detalhados")
         
-        display_columns = ['AnalysisDateTime', 'CustomerAgent', 'Client', 'ClientRisk', 'ClientOutcome', 'NOTAS']
+        # Adicionar coluna Empresas se existir
+        display_columns = ['AnalysisDateTime', 'CustomerAgent', 'Client', 'ClientRisk', 'ClientOutcome']
+        
+        if 'Empresas' in df.columns:
+            display_columns.insert(1, 'Empresas')
+        
+        if 'PONTOS_100' in df.columns:
+            display_columns.append('PONTOS_100')
+        elif 'NOTAS' in df.columns:
+            display_columns.append('NOTAS')
+        
         available_columns = [col for col in display_columns if col in df.columns]
         
         if available_columns:
@@ -1254,14 +1360,16 @@ if df is not None and len(df) > 0:
         
         with col1:
             st.markdown("### 📊 Estatísticas Gerais")
+            score_col = 'PONTOS_100' if 'PONTOS_100' in df.columns else 'NOTAS'
+            
             stats_df = pd.DataFrame({
                 'Métrica': ['Score Médio', 'Score Mediano', 'Desvio Padrão', 'Score Mínimo', 'Score Máximo'],
                 'Valor': [
-                    f"{df['NOTAS'].mean():.2f}",
-                    f"{df['NOTAS'].median():.2f}",
-                    f"{df['NOTAS'].std():.2f}",
-                    f"{df['NOTAS'].min():.2f}",
-                    f"{df['NOTAS'].max():.2f}"
+                    f"{df[score_col].mean():.2f}",
+                    f"{df[score_col].median():.2f}",
+                    f"{df[score_col].std():.2f}",
+                    f"{df[score_col].min():.2f}",
+                    f"{df[score_col].max():.2f}"
                 ]
             })
             st.dataframe(stats_df, use_container_width=True, hide_index=True)
@@ -1269,8 +1377,9 @@ if df is not None and len(df) > 0:
         with col2:
             st.markdown("### 🏆 Rankings")
             if 'CustomerAgent' in df.columns:
-                best_agents = df.groupby('CustomerAgent')['NOTAS'].mean().sort_values(ascending=False).head(3)
-                worst_agents = df.groupby('CustomerAgent')['NOTAS'].mean().sort_values(ascending=True).head(3)
+                score_col = 'PONTOS_100' if 'PONTOS_100' in df.columns else 'NOTAS'
+                best_agents = df.groupby('CustomerAgent')[score_col].mean().sort_values(ascending=False).head(3)
+                worst_agents = df.groupby('CustomerAgent')[score_col].mean().sort_values(ascending=True).head(3)
                 
                 st.markdown("**Top 3 Melhores:**")
                 for i, (agent, score) in enumerate(best_agents.items(), 1):
@@ -1312,16 +1421,3 @@ else:
             <p style='color: """ + CARGLASS_GRAY + """;'>Identifique padrões e oportunidades de melhoria ao longo do tempo</p>
         </div>
         """, unsafe_allow_html=True)
-
-# Botão de toggle da sidebar (JavaScript)
-st.markdown("""
-<script>
-function toggleSidebar() {
-    const sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
-    if (sidebar) {
-        sidebar.style.display = sidebar.style.display === 'none' ? 'block' : 'none';
-    }
-}
-</script>
-<button class='sidebar-toggle' onclick='toggleSidebar()'>☰</button>
-""", unsafe_allow_html=True)
