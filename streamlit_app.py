@@ -677,11 +677,11 @@ def create_satisfaction_donut(df):
             margin=dict(l=40, r=40, t=80, b=100)
         )
         
-         return fig
+        return fig
     return None
 
 
-def create_risk_baixo_alto_chart(df)::
+def create_risk_baixo_alto_chart(df):
     """Cria gráfico de pizza mostrando apenas Risco Baixo vs Risco Alto"""
     if 'ClientRisk' in df.columns:
         # Filtrar apenas Baixo e Alto
