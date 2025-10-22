@@ -19,6 +19,28 @@ from reportlab.lib.colors import HexColor
 import tempfile
 import base64
 
+
+def get_satisfaction_cluster(value):
+    """Retorna o cluster de satisfação para um valor"""
+    if pd.isna(value):
+        return None
+    
+    value_upper = str(value).strip().upper()
+    
+    # Satisfeito (positivo)
+    if value_upper in ['ALTA', 'ALTO', 'BOA', 'SATISFEITO', 'SATISFEITA']:
+        return 'SATISFEITO'
+    
+    # Neutro
+    if value_upper in ['NEUTRA', 'NEUTRO', 'MÉDIA', 'MEDIA', 'MÉDIO', 'MEDIO', 'MODERADA', 'MODERADO']:
+        return 'NEUTRO'
+    
+    # Insatisfeito (negativo)
+    if value_upper in ['BAIXA', 'BAIXO', 'INSATISFEITO', 'INSATISFEITA', 'INSATISFATÓRIO', 'INSATISFATORIA']:
+        return 'INSATISFEITO'
+    
+    return None
+
 st.set_page_config(
     page_title="Monitor AI - Carglass",
     page_icon="🔴",
@@ -341,7 +363,8 @@ def generate_employee_pdf(df, employee_name):
         risk_baixo = 0
     
     if 'Client' in employee_df.columns and len(employee_df) > 0:
-        satisfaction = employee_df[employee_df['Client'].isin(['BOA', 'ALTA'])].shape[0] / len(employee_df) * 100
+        employee_df['Client_Cluster'] = employee_df['Client'].apply(get_satisfaction_cluster)
+        satisfaction = (employee_df['Client_Cluster'] == 'SATISFEITO').sum() / len(employee_df) * 100
     else:
         satisfaction = 0
     
@@ -349,10 +372,10 @@ def generate_employee_pdf(df, employee_name):
     
     summary_data = [
         ['Métrica', 'Valor'],
-        ['Porcentagem de Acerto Média', f'{avg_score:.1f}%'],
+        ['Porcentagem de Acerto Média', f'{round(avg_score)}%'],
         ['Total de Ligações Analisadas', str(total_calls)],
-        ['Taxa de Risco Baixo', f'{risk_baixo:.1f}%'],
-        ['Taxa de Satisfação', f'{satisfaction:.1f}%']
+        ['Taxa de Risco Baixo', f'{round(risk_baixo)}%'],
+        ['Taxa de Satisfação', f'{round(satisfaction)}%']
     ]
     
     summary_table = Table(summary_data, colWidths=[3*inch, 2*inch])
@@ -392,7 +415,7 @@ def generate_employee_pdf(df, employee_name):
         q = f'Question{i}'
         if q in employee_df.columns:
             perf = employee_df[q].mean() * 100
-            criteria_data.append([question_names.get(q, q), f'{perf:.1f}%'])
+            criteria_data.append([question_names.get(q, q), f'{round(perf)}%'])
     
     criteria_table = Table(criteria_data, colWidths=[3*inch, 2*inch])
     criteria_table.setStyle(TableStyle([
@@ -420,7 +443,7 @@ def generate_employee_pdf(df, employee_name):
             score = row[score_col] if score_col == 'PERCENTUAL' else (row[score_col]/81)*100
             risk = row.get('ClientRisk', 'N/A')
             client = row.get('Client', 'N/A')
-            history_data.append([date_str, f'{score:.1f}%', risk, client])
+            history_data.append([date_str, f'{round(score)}%', risk, client])
         
         history_table = Table(history_data, colWidths=[1.5*inch, 1.5*inch, 1.5*inch, 1.5*inch])
         history_table.setStyle(TableStyle([
@@ -453,7 +476,7 @@ def generate_employee_pdf(df, employee_name):
     if weak_points:
         recommendations = "Pontos que necessitam maior atenção:<br/>"
         for point, perf in weak_points[:3]:
-            recommendations += f"• {point}: {perf:.1f}% de acerto<br/>"
+            recommendations += f"• {point}: {round(perf)}% de acerto<br/>"
     else:
         recommendations = "Parabéns! Todos os critérios estão acima da meta de 70%."
     
@@ -521,10 +544,10 @@ def create_performance_chart(df):
                 color=colors,
                 line=dict(color='white', width=2)
             ),
-            text=[f'{p:.1f}%' for p in performance],
+            text=[f'{round(p)}%' for p in performance],
             textposition='outside',
             textfont=dict(size=12, color=CARGLASS_DARK_RED, family='Inter', weight='bold'),
-            hovertemplate='<b>%{x}</b><br>Acerto: %{y:.1f}%<extra></extra>'
+            hovertemplate='<b>%{x}</b><br>Acerto: %{round(y)}%<extra></extra>'
         )
     ])
     
@@ -565,47 +588,57 @@ def create_performance_chart(df):
     return fig
 
 def create_satisfaction_donut(df):
-    satisfaction_map = {
-        'BOA': 'Boa',
-        'MODERADA': 'Moderada',
-        'BAIXA': 'Baixa',
-        'ALTA': 'Alta',
-        'SATISFEITA': 'Satisfeita',
+    # Mapeamento de clusterização - agrupa categorias similares
+    cluster_map = {
+        # Satisfeito (verde)
+        'ALTA': 'Satisfeito',
+        'ALTO': 'Satisfeito',
+        'BOA': 'Satisfeito',
         'SATISFEITO': 'Satisfeito',
-        'MÉDIA': 'Média',
-        'MEDIA': 'Média',
-        'NEUTRA': 'Neutra',
-        'INSATISFEITO': 'Insatisfeito'
+        'SATISFEITA': 'Satisfeito',
+        
+        # Neutro (amarelo)
+        'NEUTRA': 'Neutro',
+        'NEUTRO': 'Neutro',
+        'MÉDIA': 'Neutro',
+        'MEDIA': 'Neutro',
+        'MÉDIO': 'Neutro',
+        'MEDIO': 'Neutro',
+        'MODERADA': 'Neutro',
+        'MODERADO': 'Neutro',
+        
+        # Insatisfeito (vermelho)
+        'BAIXA': 'Insatisfeito',
+        'BAIXO': 'Insatisfeito',
+        'INSATISFEITO': 'Insatisfeito',
+        'INSATISFEITA': 'Insatisfeito',
+        'INSATISFATÓRIO': 'Insatisfeito',
+        'INSATISFATORIA': 'Insatisfeito',
     }
     
+    # Cores para os clusters
     color_map = {
-        'Alta': '#00A86B',
-        'Boa': '#28A745',
-        'Satisfeita': '#5CB85C',
-        'Satisfeito': '#5CB85C',
-        'Média': '#90EE90',
-        'Moderada': '#FFC107',
-        'Neutra': '#FFD700',
-        'Baixa': '#FF6B6B',
-        'Insatisfeito': '#DC0A0A'
+        'Satisfeito': '#28A745',  # Verde
+        'Neutro': '#FFC107',      # Amarelo
+        'Insatisfeito': '#DC0A0A', # Vermelho
+        'Indeterminado': '#6C757D' # Cinza
     }
     
     if 'Client' in df.columns:
-        # Filtrar apenas as 4 opções válidas
-        valid_options = ['NEUTRA', 'SATISFEITO', 'SATISFEITA', 'ALTA', 'INSATISFEITO']
-        df_filtered = df[df['Client'].str.upper().isin(valid_options)]
+        # Criar coluna de cluster
+        df_copy = df.copy()
+        df_copy['Client_Cluster'] = df_copy['Client'].apply(
+            lambda x: cluster_map.get(str(x).strip().upper(), 'Indeterminado') if pd.notna(x) and len(str(x)) < 50 else 'Indeterminado'
+        )
         
-        satisfaction_counts = df_filtered['Client'].value_counts()
+        # Remover categoria Indeterminado se houver
+        df_copy = df_copy[df_copy['Client_Cluster'] != 'Indeterminado']
         
-        labels = []
-        for label in satisfaction_counts.index:
-            if pd.isna(label):
-                continue
-            else:
-                mapped = satisfaction_map.get(str(label).strip().upper(), str(label).strip().title())
-                labels.append(mapped)
+        # Contar clusters
+        cluster_counts = df_copy['Client_Cluster'].value_counts()
         
-        values = satisfaction_counts.values
+        labels = cluster_counts.index.tolist()
+        values = cluster_counts.values
         colors_list = [color_map.get(label, '#6C757D') for label in labels]
         
         fig = go.Figure(data=[go.Pie(
@@ -647,6 +680,7 @@ def create_satisfaction_donut(df):
         return fig
     return None
 
+
 def create_risk_analysis(df):
     if 'ClientRisk' in df.columns:
         risk_counts = df['ClientRisk'].value_counts()
@@ -661,7 +695,7 @@ def create_risk_analysis(df):
                 count = risk_counts[risk]
                 pct = count / total * 100
                 risk_data.append(count)
-                risk_labels.append(f'{risk.capitalize()}\n{count} casos ({pct:.1f}%)')
+                risk_labels.append(f'{risk.capitalize()}\n{count} casos ({round(pct)}%)')
                 
                 if risk == 'BAIXO':
                     risk_colors.append(CARGLASS_GREEN)
@@ -698,9 +732,10 @@ def create_risk_analysis(df):
             ),
             yaxis=dict(
                 title=dict(text='Número de Casos', font=dict(size=13, color=CARGLASS_GRAY, family='Inter')),
-                tickfont=dict(size=11, color=CARGLASS_GRAY, family='Inter')
+                tickfont=dict(size=11, color=CARGLASS_GRAY, family='Inter'),
+                range=[0, max(risk_data) * 1.25]  # Adicionar espaço para o texto acima das barras
             ),
-            height=350,
+            height=450,
             showlegend=False,
             plot_bgcolor='#FAFBFC',
             paper_bgcolor='white',
@@ -746,11 +781,11 @@ def create_agent_ranking(df, top_n=5):
                 color=colors_agents,
                 line=dict(color='white', width=2)
             ),
-            text=[f"{score:.1f}%<br>{calls} ligações" 
+            text=[f"{round(score)}%<br>{calls} ligações" 
                   for score, calls in zip(agent_scores['Porcentagem Média'], agent_scores['Total Ligações'])],
             textposition='outside',
             textfont=dict(size=11, color=CARGLASS_DARK_RED, family='Inter', weight='bold'),
-            hovertemplate='<b>%{y}</b><br>Acerto: %{x:.1f}%<br>Ligações: %{text}<extra></extra>'
+            hovertemplate='<b>%{y}</b><br>Acerto: %{round(x)}%<br>Ligações: %{text}<extra></extra>'
         ))
         
         fig.update_layout(
@@ -818,11 +853,11 @@ def create_bottom_performers(df, bottom_n=5):
                 color=colors_agents,
                 line=dict(color='white', width=2)
             ),
-            text=[f"{score:.1f}%<br>{calls} ligações" 
+            text=[f"{round(score)}%<br>{calls} ligações" 
                   for score, calls in zip(agent_scores['Porcentagem Média'], agent_scores['Total Ligações'])],
             textposition='outside',
             textfont=dict(size=11, color=CARGLASS_DARK_RED, family='Inter'),
-            hovertemplate='<b>%{y}</b><br>Acerto: %{x:.1f}%<br>Ligações: %{text}<extra></extra>'
+            hovertemplate='<b>%{y}</b><br>Acerto: %{round(x)}%<br>Ligações: %{text}<extra></extra>'
         ))
         
         fig.update_layout(
@@ -891,7 +926,7 @@ def create_timeline_chart(df):
                 line=dict(color=CARGLASS_RED, width=3),
                 marker=dict(size=8, color=CARGLASS_RED, line=dict(color='white', width=2)),
                 yaxis='y',
-                hovertemplate='<b>Data: %{x|%d/%m/%Y}</b><br>Acerto: %{y:.1f}%<extra></extra>'
+                hovertemplate='<b>Data: %{x|%d/%m/%Y}</b><br>Acerto: %{round(y)}%<extra></extra>'
             ))
             
             fig.add_trace(go.Bar(
@@ -1004,9 +1039,11 @@ def create_company_comparison(df):
             x=company_stats.index,
             y=company_stats['Porcentagem Média'],
             marker_color=CARGLASS_RED,
-            text=company_stats['Porcentagem Média'].apply(lambda x: f'{x:.1f}%'),
+            text=[f"{round(row['Porcentagem Média'])}%<br>({int(row['Total Análises'])} análises)" 
+                  for _, row in company_stats.iterrows()],
             textposition='outside',
-            hovertemplate='<b>%{x}</b><br>Acerto: %{y:.1f}%<extra></extra>'
+            hovertemplate='<b>%{x}</b><br>Acerto: %{y:.0f}%<br>Análises: %{customdata}<extra></extra>',
+            customdata=company_stats['Total Análises']
         ))
         
         fig.update_layout(
@@ -1164,10 +1201,14 @@ if df is not None and len(df) > 0:
     
     low_risk_pct = (df['ClientRisk'] == 'BAIXO').sum() / len(df) * 100 if 'ClientRisk' in df.columns else 0
     
-    satisfaction_pct = 0
-    if 'Client' in df.columns:
-        good_satisfaction = df[df['Client'].isin(['BOA', 'ALTA'])].shape[0]
-        satisfaction_pct = (good_satisfaction / len(df)) * 100 if len(df) > 0 else 0
+    # Taxa de Saudação (Question1) - mesmo cálculo do gráfico
+    saudacao_pct = 0
+    if 'Question1' in df.columns and len(df) > 0:
+        # Garantir que estamos usando o mesmo cálculo do gráfico de performance
+        saudacao_pct = df['Question1'].mean() * 100
+    else:
+        # Se Question1 não existir, tentar calcular de outra forma
+        saudacao_pct = 0
     
     if 'AnalysisDateTime' in df.columns:
         last_week = df[df['AnalysisDateTime'] >= (datetime.now() - timedelta(days=7))]
@@ -1191,7 +1232,7 @@ if df is not None and len(df) > 0:
         st.markdown(f"""
         <div class='kpi-card-modern'>
             <div class='kpi-label'>Porcentagem de Acerto</div>
-            <div class='kpi-value'>{avg_score:.1f}%</div>
+            <div class='kpi-value'>{round(avg_score)}%</div>
             <div class='kpi-delta'>{delta_text}</div>
         </div>
         """, unsafe_allow_html=True)
@@ -1202,18 +1243,18 @@ if df is not None and len(df) > 0:
         st.markdown(f"""
         <div class='kpi-card-modern'>
             <div class='kpi-label'>Risco Baixo</div>
-            <div class='kpi-value'>{low_risk_pct:.1f}%</div>
+            <div class='kpi-value'>{round(low_risk_pct)}%</div>
             <div class='kpi-delta'>{risk_text}</div>
         </div>
         """, unsafe_allow_html=True)
     
     with col4:
-        sat_icon = "🎯" if satisfaction_pct >= 80 else "📊"
-        sat_text = f"{sat_icon} {'Excelente' if satisfaction_pct >= 80 else 'Bom'} desempenho"
+        sat_icon = "🎯" if saudacao_pct >= 80 else "📊"
+        sat_text = f"{sat_icon} {'Excelente' if saudacao_pct >= 80 else 'Bom'} desempenho"
         st.markdown(f"""
         <div class='kpi-card-modern'>
             <div class='kpi-label'>Taxa Saudação</div>
-            <div class='kpi-value'>{satisfaction_pct:.1f}%</div>
+            <div class='kpi-value'>{round(saudacao_pct)}%</div>
             <div class='kpi-delta'>{sat_text}</div>
         </div>
         """, unsafe_allow_html=True)
@@ -1233,11 +1274,21 @@ if df is not None and len(df) > 0:
         with col2:
             if company_stats is not None:
                 st.markdown("### 📋 Estatísticas por Empresa")
+                
+                # Adicionar linha de média
+                media_row = pd.DataFrame({
+                    'Porcentagem Média': [company_stats['Porcentagem Média'].mean()],
+                    'Total Análises': [company_stats['Total Análises'].sum()],
+                    '% Risco Baixo': [company_stats['% Risco Baixo'].mean()]
+                }, index=['MÉDIA GERAL'])
+                
+                company_stats_with_avg = pd.concat([company_stats, media_row])
+                
                 st.dataframe(
-                    company_stats.style.format({
-                        'Porcentagem Média': '{:.1f}%',
-                        '% Risco Baixo': '{:.1f}%'
-                    }),
+                    company_stats_with_avg.style.format({
+                        'Porcentagem Média': '{:.0f}%',
+                        '% Risco Baixo': '{:.0f}%'
+                    }).apply(lambda x: ['background-color: #FFF3CD; font-weight: bold' if x.name == 'MÉDIA GERAL' else '' for _ in x], axis=1),
                     use_container_width=True
                 )
     
@@ -1308,7 +1359,7 @@ if df is not None and len(df) > 0:
             st.markdown(f"""
             <div style='margin-bottom: 15px; padding: 12px; background: #F8F9FA; border-radius: 8px; border-left: 4px solid {color};'>
                 <div style='font-weight: 600; color: {CARGLASS_DARK_RED}; font-size: 13px;'>{icon} {q_name}</div>
-                <div style='color: {color}; font-weight: bold; font-size: 16px; margin-top: 5px;'>{perf:.1f}%</div>
+                <div style='color: {color}; font-weight: bold; font-size: 16px; margin-top: 5px;'>{round(perf)}%</div>
             </div>
             """, unsafe_allow_html=True)
         
@@ -1362,13 +1413,14 @@ if df is not None and len(df) > 0:
                     score_val = (agent_df[score_col].mean() / 81) * 100
                 else:
                     score_val = agent_df[score_col].mean()
-                st.metric("Acerto Médio", f"{score_val:.1f}%")
+                st.metric("Acerto Médio", f"{round(score_val)}%")
             with col3:
                 risk_baixo = (agent_df['ClientRisk'] == 'BAIXO').sum() / len(agent_df) * 100 if 'ClientRisk' in agent_df.columns else 0
-                st.metric("Risco Baixo", f"{risk_baixo:.1f}%")
+                st.metric("Risco Baixo", f"{round(risk_baixo)}%")
             with col4:
-                satisfaction = agent_df[agent_df['Client'].isin(['BOA', 'ALTA'])].shape[0] / len(agent_df) * 100 if 'Client' in agent_df.columns else 0
-                st.metric("Satisfação", f"{satisfaction:.1f}%")
+                agent_df['Client_Cluster'] = agent_df['Client'].apply(get_satisfaction_cluster) if 'Client' in agent_df.columns else None
+                satisfaction = (agent_df['Client_Cluster'] == 'SATISFEITO').sum() / len(agent_df) * 100 if 'Client' in agent_df.columns else 0
+                st.metric("Satisfação", f"{round(satisfaction)}%")
             
             questions_performance = []
             for i in range(1, 13):
@@ -1392,7 +1444,7 @@ if df is not None and len(df) > 0:
                                for p in perf_df['Performance']],
                         line=dict(color='white', width=2)
                     ),
-                    text=[f'{p:.1f}%' for p in perf_df['Performance']],
+                    text=[f'{round(p)}%' for p in perf_df['Performance']],
                     textposition='outside',
                     textfont=dict(size=11, color=CARGLASS_DARK_RED, family='Inter', weight='bold')
                 ))
@@ -1466,7 +1518,7 @@ if df is not None and len(df) > 0:
                 text=[name.split()[0] for name in agent_comparison.index],
                 textposition='top center',
                 textfont=dict(size=9, color=CARGLASS_DARK_RED, family='Inter'),
-                hovertemplate='<b>%{text}</b><br>Ligações: %{x}<br>Acerto: %{y:.1f}%<br>Risco Baixo: %{marker.size:.1f}%<extra></extra>'
+                hovertemplate='<b>%{text}</b><br>Ligações: %{x}<br>Acerto: %{round(y)}%<br>Risco Baixo: %{marker.size:.1f}%<extra></extra>'
             ))
             
             fig.update_layout(
@@ -1501,7 +1553,7 @@ if df is not None and len(df) > 0:
             st.plotly_chart(fig, use_container_width=True)
             
             st.dataframe(
-                agent_comparison.style.format({'Porcentagem Média': '{:.1f}%', '% Risco Baixo': '{:.1f}%'}),
+                agent_comparison.style.format({'Porcentagem Média': '{:.0f}%', '% Risco Baixo': '{:.0f}%'}),
                 use_container_width=True,
                 height=400
             )
@@ -1525,8 +1577,20 @@ if df is not None and len(df) > 0:
         available_columns = [col for col in display_columns if col in df.columns]
         
         if available_columns:
+            df_display = df[available_columns].sort_values('AnalysisDateTime', ascending=False).head(100).copy()
+            
+            # Renomear colunas para exibição
+            column_rename = {
+                'PERCENTUAL': 'Percentual %',
+                'AnalysisDateTime': 'Data Análise',
+                'CustomerAgent': 'Agente',
+                'ClientRisk': 'Risco',
+                'ClientOutcome': 'Resultado'
+            }
+            df_display = df_display.rename(columns=column_rename)
+            
             st.dataframe(
-                df[available_columns].sort_values('AnalysisDateTime', ascending=False).head(100),
+                df_display,
                 use_container_width=True,
                 hide_index=True,
                 height=400
@@ -1554,11 +1618,11 @@ if df is not None and len(df) > 0:
             stats_df = pd.DataFrame({
                 'Métrica': ['Acerto Médio', 'Acerto Mediano', 'Desvio Padrão', 'Acerto Mínimo', 'Acerto Máximo'],
                 'Valor': [
-                    f"{avg_val:.2f}%",
-                    f"{med_val:.2f}%",
-                    f"{std_val:.2f}%",
-                    f"{min_val:.2f}%",
-                    f"{max_val:.2f}%"
+                    f"{round(avg_val)}%",
+                    f"{round(med_val)}%",
+                    f"{round(std_val)}%",
+                    f"{round(min_val)}%",
+                    f"{round(max_val)}%"
                 ]
             })
             st.dataframe(stats_df, use_container_width=True, hide_index=True)
@@ -1580,11 +1644,11 @@ if df is not None and len(df) > 0:
                 st.markdown("**Top 3 Melhores:**")
                 for i, (agent, score) in enumerate(best_agents.items(), 1):
                     medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉"
-                    st.markdown(f"{medal} {agent}: {score:.1f}%")
+                    st.markdown(f"{medal} {agent}: {round(score)}%")
                 
                 st.markdown("<br>**3 Para Melhorar:**", unsafe_allow_html=True)
                 for agent, score in worst_agents.items():
-                    st.markdown(f"📈 {agent}: {score:.1f}%")
+                    st.markdown(f"📈 {agent}: {round(score)}%")
         
         st.markdown("</div>", unsafe_allow_html=True)
 
