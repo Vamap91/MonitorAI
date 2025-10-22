@@ -327,12 +327,12 @@ def generate_employee_pdf(df, employee_name):
     avg_score = employee_df[score_col].mean()
     total_calls = len(employee_df)
     
-    if 'ClientRisk' in employee_df.columns:
+    if 'ClientRisk' in employee_df.columns and len(employee_df) > 0:
         risk_baixo = (employee_df['ClientRisk'] == 'BAIXO').sum() / len(employee_df) * 100
     else:
         risk_baixo = 0
     
-    if 'Client' in employee_df.columns:
+    if 'Client' in employee_df.columns and len(employee_df) > 0:
         satisfaction = employee_df[employee_df['Client'].isin(['BOA', 'ALTA'])].shape[0] / len(employee_df) * 100
     else:
         satisfaction = 0
