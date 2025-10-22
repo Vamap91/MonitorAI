@@ -1376,19 +1376,22 @@ if df is not None and len(df) > 0:
     
     with col1:
         st.markdown("<div class='content-card'>", unsafe_allow_html=True)
-        risk_chart = create_risk_analysis(df)
-        if risk_chart:
-            st.plotly_chart(risk_chart, use_container_width=True)
+        # Tabela de casos de Risco Alto (gráfico removido)
+        st.markdown("<h3 style='color: #DC0A0A; margin-bottom: 15px;'>🚨 Casos de Risco Alto</h3>", unsafe_allow_html=True)
         
-        # Tabela de casos de Risco Alto
         if 'ClientRisk' in df.columns:
             required_cols = ['Mp3FileName', 'Justification', 'CustomerAgent']
             if all(col in df.columns for col in required_cols):
                 high_risk_df = df[df['ClientRisk'] == 'ALTO'][required_cols].copy()
                 if not high_risk_df.empty:
-                    st.markdown("<h4 style='color: #DC0A0A; margin-top: 20px;'>🚨 Casos de Risco Alto</h4>", unsafe_allow_html=True)
                     high_risk_df.columns = ['Gravação (MP3)', 'Justificativa', 'Agente']
-                    st.dataframe(high_risk_df, use_container_width=True, hide_index=True)
+                    st.dataframe(high_risk_df, use_container_width=True, hide_index=True, height=400)
+                else:
+                    st.success("✅ Nenhum caso de risco alto identificado!")
+            else:
+                st.warning("⚠️ Colunas necessárias não encontradas no arquivo.")
+        else:
+            st.warning("⚠️ Coluna ClientRisk não encontrada no arquivo.")
         
         st.markdown("</div>", unsafe_allow_html=True)
     
