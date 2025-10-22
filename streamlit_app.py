@@ -677,8 +677,71 @@ def create_satisfaction_donut(df):
             margin=dict(l=40, r=40, t=80, b=100)
         )
         
+         return fig
+    return None
+
+
+def create_risk_baixo_alto_chart(df)::
+    """Cria gráfico de pizza mostrando apenas Risco Baixo vs Risco Alto"""
+    if 'ClientRisk' in df.columns:
+        # Filtrar apenas Baixo e Alto
+        df_filtered = df[df['ClientRisk'].isin(['BAIXO', 'ALTO'])]
+        
+        if len(df_filtered) == 0:
+            return None
+        
+        risk_counts = df_filtered['ClientRisk'].value_counts()
+        
+        labels = []
+        values = []
+        colors_list = []
+        
+        for risk in ['BAIXO', 'ALTO']:
+            if risk in risk_counts.index:
+                count = risk_counts[risk]
+                labels.append('Risco Baixo' if risk == 'BAIXO' else 'Risco Alto')
+                values.append(count)
+                colors_list.append(CARGLASS_GREEN if risk == 'BAIXO' else CARGLASS_RED)
+        
+        fig = go.Figure(data=[go.Pie(
+            labels=labels,
+            values=values,
+            hole=.6,
+            marker=dict(
+                colors=colors_list,
+                line=dict(color='white', width=3)
+            ),
+            textinfo='label+percent',
+            textposition='outside',
+            textfont=dict(size=14, color=CARGLASS_DARK_RED, family='Inter', weight='bold'),
+            hovertemplate='<b>%{label}</b><br>Quantidade: %{value}<br>Percentual: %{percent}<extra></extra>'
+        )])
+        
+        fig.update_layout(
+            title={
+                'text': '⚠️ Distribuição de Risco (Baixo vs Alto)',
+                'font': {'size': 22, 'color': CARGLASS_DARK_RED, 'family': 'Inter'},
+                'x': 0.5,
+                'xanchor': 'center'
+            },
+            height=450,
+            paper_bgcolor='white',
+            font={'color': CARGLASS_DARK_RED, 'family': 'Inter'},
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=-0.15,
+                xanchor="center",
+                x=0.5,
+                font=dict(size=12, family='Inter')
+            ),
+            margin=dict(l=40, r=40, t=80, b=100)
+        )
+        
         return fig
     return None
+
 
 
 def create_risk_analysis(df):
