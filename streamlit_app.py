@@ -378,8 +378,7 @@ def generate_employee_pdf(df, employee_name):
         ['Métrica', 'Valor'],
         ['Porcentagem de Acerto Média', f'{round(avg_score)}%'],
         ['Total de Ligações Analisadas', str(total_calls)],
-        ['Taxa de Risco Baixo', f'{round(risk_baixo)}%'],
-        ['Taxa de Satisfação', f'{round(satisfaction)}%']
+        ['Taxa de Risco Baixo', f'{round(risk_baixo)}%']
     ]
     
     summary_table = Table(summary_data, colWidths=[3*inch, 2*inch])
@@ -395,6 +394,22 @@ def generate_employee_pdf(df, employee_name):
     ]))
     
     elements.append(summary_table)
+    
+    # Adicionar explicações das métricas
+    explanation_style = ParagraphStyle(
+        'Explanation',
+        parent=styles['Normal'],
+        fontSize=9,
+        textColor=HexColor(CARGLASS_GRAY),
+        spaceAfter=5,
+        leftIndent=10
+    )
+    
+    elements.append(Spacer(1, 0.2*inch))
+    elements.append(Paragraph("<b>Entenda as métricas:</b>", explanation_style))
+    elements.append(Paragraph("• <b>Porcentagem de Acerto Média:</b> Média geral de acerto em todos os critérios avaliados (0-100%).", explanation_style))
+    elements.append(Paragraph("• <b>Total de Ligações Analisadas:</b> Quantidade de ligações avaliadas neste período.", explanation_style))
+    elements.append(Paragraph("• <b>Taxa de Risco Baixo:</b> Percentual de ligações classificadas como risco baixo (segurança operacional).", explanation_style))
     elements.append(Spacer(1, 0.5*inch))
     
     question_names = {
@@ -434,6 +449,13 @@ def generate_employee_pdf(df, employee_name):
     ]))
     
     elements.append(criteria_table)
+    
+    # Adicionar explicação dos critérios
+    elements.append(Spacer(1, 0.2*inch))
+    elements.append(Paragraph("<b>Sobre os critérios:</b>", explanation_style))
+    elements.append(Paragraph("• Cada critério avalia um aspecto específico do atendimento conforme checklist de qualidade.", explanation_style))
+    elements.append(Paragraph("• Valores abaixo de 70% indicam necessidade de treinamento naquele critério.", explanation_style))
+    
     elements.append(PageBreak())
     
     if 'AnalysisDateTime' in employee_df.columns:
@@ -450,7 +472,9 @@ def generate_employee_pdf(df, employee_name):
             history_data.append([date_str, f'{round(score)}%', risk, client])
         
         history_table = Table(history_data, colWidths=[1.5*inch, 1.5*inch, 1.5*inch, 1.5*inch])
-        history_table.setStyle(TableStyle([
+        
+        # Aplicar estilo com destaque para linhas com ALTO
+        table_style = [
             ('BACKGROUND', (0, 0), (-1, 0), HexColor(CARGLASS_RED)),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
@@ -460,9 +484,35 @@ def generate_employee_pdf(df, employee_name):
             ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
             ('GRID', (0, 0), (-1, -1), 1, colors.black),
             ('FONTSIZE', (0, 1), (-1, -1), 9)
-        ]))
+        ]
         
+        # Destacar linhas com risco ALTO em amarelo
+        for i, row in enumerate(history_data[1:], start=1):
+            if row[2] == 'ALTO':
+                table_style.append(('BACKGROUND', (2, i), (2, i), colors.yellow))
+        
+        history_table.setStyle(TableStyle(table_style))
         elements.append(history_table)
+        
+        # Adicionar detalhes de casos de risco ALTO
+        high_risk_cases = recent_df[recent_df['ClientRisk'] == 'ALTO']
+        if len(high_risk_cases) > 0:
+            elements.append(Spacer(1, 0.3*inch))
+            elements.append(Paragraph("<b>⚠️ Detalhes dos Casos de Risco Alto:</b>", explanation_style))
+            
+            for idx, (_, row) in enumerate(high_risk_cases.iterrows(), 1):
+                date_str = row['AnalysisDateTime'].strftime('%d/%m/%Y')
+                mp3_file = row.get('Mp3FileName', 'N/A')
+                justification = row.get('Justification', 'Sem justificativa registrada')
+                
+                # Limitar tamanho da justificativa
+                if len(justification) > 150:
+                    justification = justification[:150] + '...'
+                
+                elements.append(Paragraph(f"<b>{idx}. {date_str}</b>", explanation_style))
+                elements.append(Paragraph(f"   Gravação: {mp3_file}", explanation_style))
+                elements.append(Paragraph(f"   Justificativa: {justification}", explanation_style))
+                elements.append(Spacer(1, 0.1*inch))
     
     elements.append(Spacer(1, 0.5*inch))
     elements.append(Paragraph("Recomendações", subtitle_style))
@@ -686,7 +736,7 @@ def create_satisfaction_donut(df):
 
 
 def create_risk_baixo_alto_chart(df):
-    """Cria gráfico de pizza mostrando distribuição de Risco (Baixo, Médio e Alto)"""
+    """Cria gráfico de barras horizontais mostrando distribuição de Risco (Baixo, Médio e Alto)"""
     if 'ClientRisk' in df.columns:
         # Usar todos os riscos (Baixo, Médio e Alto)
         risk_counts = df['ClientRisk'].value_counts()
@@ -697,62 +747,72 @@ def create_risk_baixo_alto_chart(df):
         if len(risk_counts) == 0:
             return None
         
-        labels = []
-        values = []
-        colors_list = []
-        
-        # Ordem: Baixo, Médio, Alto, Indefinido
+        # Ordem inversa para exibir: Alto no topo, Baixo embaixo
+        risk_order = ['ALTO', 'MEDIO', 'BAIXO']
         risk_mapping = {
             'BAIXO': ('Risco Baixo', CARGLASS_GREEN),
             'MEDIO': ('Risco Médio', CARGLASS_YELLOW),
             'ALTO': ('Risco Alto', CARGLASS_RED)
         }
         
-        for risk, (label, color) in risk_mapping.items():
+        labels = []
+        values = []
+        colors_list = []
+        percentages = []
+        
+        for risk in risk_order:
             if risk in risk_counts.index:
                 count = risk_counts[risk]
+                label, color = risk_mapping[risk]
                 labels.append(label)
                 values.append(count)
                 colors_list.append(color)
+                pct = (count / total_records * 100) if total_records > 0 else 0
+                percentages.append(pct)
         
+        # Criar gráfico de barras horizontais
+        fig = go.Figure()
         
-        fig = go.Figure(data=[go.Pie(
-            labels=labels,
-            values=values,
-            hole=.6,
+        fig.add_trace(go.Bar(
+            y=labels,
+            x=values,
+            orientation='h',
             marker=dict(
-                colors=colors_list,
-                line=dict(color='white', width=3)
+                color=colors_list,
+                line=dict(color='white', width=2)
             ),
-            textinfo='label+percent',
+            text=[f"{val} ({pct:.1f}%)" for val, pct in zip(values, percentages)],
             textposition='outside',
             textfont=dict(size=14, color=CARGLASS_DARK_RED, family='Inter', weight='bold'),
-            hovertemplate='<b>%{label}</b><br>Quantidade: %{value}<br>Percentual: %{percent}<extra></extra>'
-        )])
+            hovertemplate='<b>%{y}</b><br>Quantidade: %{x}<br>Percentual: %{customdata:.1f}%<extra></extra>',
+            customdata=percentages
+        ))
         
         # Calcular total mostrado no gráfico
         total_shown = sum(values)
         
         fig.update_layout(
             title={
-                'text': f'⚠️ Distribuição de Risco<br><sub style="font-size:14px;">Total: {total_shown} registros</sub>',
-                'font': {'size': 22, 'color': CARGLASS_DARK_RED, 'family': 'Inter'},
+                'text': f'⚠️ Distribuição de Risco (Total: {total_shown} registros)',
+                'font': {'size': 20, 'color': CARGLASS_DARK_RED, 'family': 'Inter'},
                 'x': 0.5,
                 'xanchor': 'center'
             },
-            height=450,
-            paper_bgcolor='white',
-            font={'color': CARGLASS_DARK_RED, 'family': 'Inter'},
-            showlegend=True,
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=-0.15,
-                xanchor="center",
-                x=0.5,
-                font=dict(size=12, family='Inter')
+            xaxis=dict(
+                title=dict(text='Quantidade de Registros', font=dict(size=13, color=CARGLASS_GRAY, family='Inter')),
+                tickfont=dict(size=11, color=CARGLASS_GRAY, family='Inter'),
+                showgrid=True,
+                gridcolor='#E8E8E8'
             ),
-            margin=dict(l=40, r=40, t=80, b=100)
+            yaxis=dict(
+                tickfont=dict(size=13, color=CARGLASS_DARK_RED, family='Inter')
+            ),
+            height=350,
+            paper_bgcolor='white',
+            plot_bgcolor='#FAFBFC',
+            font={'color': CARGLASS_DARK_RED, 'family': 'Inter'},
+            showlegend=False,
+            margin=dict(l=120, r=150, t=80, b=60)
         )
         
         return fig
@@ -1105,11 +1165,16 @@ def create_company_comparison(df):
     if 'Empresas' in df.columns and 'PERCENTUAL' in df.columns:
         # DataFrame já vem filtrado do load_data
         company_stats = df.groupby('Empresas').agg({
-            'PERCENTUAL': ['mean', 'count'],
+            'PERCENTUAL': 'mean',
             'ClientRisk': lambda x: (x == 'BAIXO').sum() / len(x) * 100 if len(x) > 0 else 0
         }).round(1)
         
-        company_stats.columns = ['Porcentagem Média', 'Total Análises', '% Risco Baixo']
+        # Adicionar contagem usando size() que conta TODOS os registros (não ignora NaN)
+        company_stats['Total Análises'] = df.groupby('Empresas').size()
+        
+        company_stats.columns = ['Porcentagem Média', '% Risco Baixo', 'Total Análises']
+        # Reordenar colunas
+        company_stats = company_stats[['Porcentagem Média', 'Total Análises', '% Risco Baixo']]
         company_stats = company_stats.sort_values('Porcentagem Média', ascending=False)
         
         # Total de análises no gráfico
@@ -1275,13 +1340,9 @@ if df is not None and len(df) > 0:
     
     col1, col2, col3, col4 = st.columns(4)
     
-    # Total de análises - EXATAMENTE como calculado na tabela de empresas
-    if 'Empresas' in df.columns and 'PERCENTUAL' in df.columns:
-        # Usar o mesmo cálculo da tabela: groupby + count
-        company_count = df.groupby('Empresas')['PERCENTUAL'].count()
-        total_analyses = int(company_count.sum())
-    else:
-        total_analyses = len(df)
+    # Total de análises - usar len(df) direto após filtros
+    # A tabela mostra a soma dos registros por empresa, que deve ser igual a len(df)
+    total_analyses = len(df)
     
     if 'PERCENTUAL' in df.columns:
         avg_score = df['PERCENTUAL'].mean()
