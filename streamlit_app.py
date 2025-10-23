@@ -302,9 +302,13 @@ def load_data(file):
             if 'PERCENTUAL' in df.columns:
                 df = df[(df['PERCENTUAL'].notna()) & (df['PERCENTUAL'] >= 19.99)]
             
-            # Filtrar registros com ClientRisk Indeterminado
+            # Filtrar registros com ClientRisk Indeterminado ou vazio
             if 'ClientRisk' in df.columns:
-                df = df[df['ClientRisk'] != 'INDETERMINADO']
+                df = df[(df['ClientRisk'] != 'INDETERMINADO') & (df['ClientRisk'].notna())]
+            
+            # Filtrar registros com Empresas vazio (para consistência)
+            if 'Empresas' in df.columns:
+                df = df[df['Empresas'].notna()]
             
             return df
         else:
@@ -682,26 +686,35 @@ def create_satisfaction_donut(df):
 
 
 def create_risk_baixo_alto_chart(df):
-    """Cria gráfico de pizza mostrando apenas Risco Baixo vs Risco Alto"""
+    """Cria gráfico de pizza mostrando distribuição de Risco (Baixo, Médio e Alto)"""
     if 'ClientRisk' in df.columns:
-        # Filtrar apenas Baixo e Alto
-        df_filtered = df[df['ClientRisk'].isin(['BAIXO', 'ALTO'])]
+        # Usar todos os riscos (Baixo, Médio e Alto)
+        risk_counts = df['ClientRisk'].value_counts()
         
-        if len(df_filtered) == 0:
+        # Total de registros
+        total_records = len(df)
+        
+        if len(risk_counts) == 0:
             return None
-        
-        risk_counts = df_filtered['ClientRisk'].value_counts()
         
         labels = []
         values = []
         colors_list = []
         
-        for risk in ['BAIXO', 'ALTO']:
+        # Ordem: Baixo, Médio, Alto, Indefinido
+        risk_mapping = {
+            'BAIXO': ('Risco Baixo', CARGLASS_GREEN),
+            'MEDIO': ('Risco Médio', CARGLASS_YELLOW),
+            'ALTO': ('Risco Alto', CARGLASS_RED)
+        }
+        
+        for risk, (label, color) in risk_mapping.items():
             if risk in risk_counts.index:
                 count = risk_counts[risk]
-                labels.append('Risco Baixo' if risk == 'BAIXO' else 'Risco Alto')
+                labels.append(label)
                 values.append(count)
-                colors_list.append(CARGLASS_GREEN if risk == 'BAIXO' else CARGLASS_RED)
+                colors_list.append(color)
+        
         
         fig = go.Figure(data=[go.Pie(
             labels=labels,
@@ -717,9 +730,12 @@ def create_risk_baixo_alto_chart(df):
             hovertemplate='<b>%{label}</b><br>Quantidade: %{value}<br>Percentual: %{percent}<extra></extra>'
         )])
         
+        # Calcular total mostrado no gráfico
+        total_shown = sum(values)
+        
         fig.update_layout(
             title={
-                'text': '⚠️ Distribuição de Risco (Baixo vs Alto)',
+                'text': f'⚠️ Distribuição de Risco<br><sub style="font-size:14px;">Total: {total_shown} registros</sub>',
                 'font': {'size': 22, 'color': CARGLASS_DARK_RED, 'family': 'Inter'},
                 'x': 0.5,
                 'xanchor': 'center'
@@ -1087,6 +1103,7 @@ def create_improvement_points(df):
 
 def create_company_comparison(df):
     if 'Empresas' in df.columns and 'PERCENTUAL' in df.columns:
+        # DataFrame já vem filtrado do load_data
         company_stats = df.groupby('Empresas').agg({
             'PERCENTUAL': ['mean', 'count'],
             'ClientRisk': lambda x: (x == 'BAIXO').sum() / len(x) * 100 if len(x) > 0 else 0
@@ -1094,6 +1111,9 @@ def create_company_comparison(df):
         
         company_stats.columns = ['Porcentagem Média', 'Total Análises', '% Risco Baixo']
         company_stats = company_stats.sort_values('Porcentagem Média', ascending=False)
+        
+        # Total de análises no gráfico
+        total_in_chart = int(company_stats['Total Análises'].sum())
         
         fig = go.Figure()
         
@@ -1110,7 +1130,7 @@ def create_company_comparison(df):
         ))
         
         fig.update_layout(
-            title='📊 Comparativo de Performance por Empresa',
+            title=f'📊 Comparativo de Performance por Empresa<br><sub style="font-size:12px;">({total_in_chart} análises)</sub>',
             xaxis_title='Empresa',
             yaxis_title='Porcentagem de Acerto',
             yaxis_range=[0, max(company_stats['Porcentagem Média']) * 1.1],
@@ -1255,7 +1275,13 @@ if df is not None and len(df) > 0:
     
     col1, col2, col3, col4 = st.columns(4)
     
-    total_analyses = len(df)
+    # Total de análises - EXATAMENTE como calculado na tabela de empresas
+    if 'Empresas' in df.columns and 'PERCENTUAL' in df.columns:
+        # Usar o mesmo cálculo da tabela: groupby + count
+        company_count = df.groupby('Empresas')['PERCENTUAL'].count()
+        total_analyses = int(company_count.sum())
+    else:
+        total_analyses = len(df)
     
     if 'PERCENTUAL' in df.columns:
         avg_score = df['PERCENTUAL'].mean()
@@ -1553,10 +1579,8 @@ if df is not None and len(df) > 0:
         score_col = 'PERCENTUAL' if 'PERCENTUAL' in df.columns else 'NOTAS'
         
         if 'CustomerAgent' in df.columns and score_col in df.columns:
-            # Filtrar apenas Risco Baixo e Alto (remover Médio)
-            df_filtered = df[df['ClientRisk'].isin(['BAIXO', 'ALTO'])] if 'ClientRisk' in df.columns else df
-            
-            agent_comparison = df_filtered.groupby('CustomerAgent').agg({
+            # Não filtrar risco aqui - precisamos de todas as ligações para cálculo correto
+            agent_comparison = df.groupby('CustomerAgent').agg({
                 score_col: 'mean',
                 'IdAnalysis': 'count',
                 'ClientRisk': lambda x: (x == 'BAIXO').sum() / len(x) * 100 if len(x) > 0 else 0
