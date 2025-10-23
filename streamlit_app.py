@@ -686,7 +686,7 @@ def create_satisfaction_donut(df):
 
 
 def create_risk_baixo_alto_chart(df):
-    """Cria gráfico de pizza mostrando distribuição de Risco (Baixo, Médio e Alto)"""
+    """Cria gráfico de barras horizontais mostrando distribuição de Risco (Baixo, Médio e Alto)"""
     if 'ClientRisk' in df.columns:
         # Usar todos os riscos (Baixo, Médio e Alto)
         risk_counts = df['ClientRisk'].value_counts()
@@ -697,62 +697,72 @@ def create_risk_baixo_alto_chart(df):
         if len(risk_counts) == 0:
             return None
         
-        labels = []
-        values = []
-        colors_list = []
-        
-        # Ordem: Baixo, Médio, Alto, Indefinido
+        # Ordem inversa para exibir: Alto no topo, Baixo embaixo
+        risk_order = ['ALTO', 'MEDIO', 'BAIXO']
         risk_mapping = {
             'BAIXO': ('Risco Baixo', CARGLASS_GREEN),
             'MEDIO': ('Risco Médio', CARGLASS_YELLOW),
             'ALTO': ('Risco Alto', CARGLASS_RED)
         }
         
-        for risk, (label, color) in risk_mapping.items():
+        labels = []
+        values = []
+        colors_list = []
+        percentages = []
+        
+        for risk in risk_order:
             if risk in risk_counts.index:
                 count = risk_counts[risk]
+                label, color = risk_mapping[risk]
                 labels.append(label)
                 values.append(count)
                 colors_list.append(color)
+                pct = (count / total_records * 100) if total_records > 0 else 0
+                percentages.append(pct)
         
+        # Criar gráfico de barras horizontais
+        fig = go.Figure()
         
-        fig = go.Figure(data=[go.Pie(
-            labels=labels,
-            values=values,
-            hole=.6,
+        fig.add_trace(go.Bar(
+            y=labels,
+            x=values,
+            orientation='h',
             marker=dict(
-                colors=colors_list,
-                line=dict(color='white', width=3)
+                color=colors_list,
+                line=dict(color='white', width=2)
             ),
-            textinfo='label+percent',
+            text=[f"{val} ({pct:.1f}%)" for val, pct in zip(values, percentages)],
             textposition='outside',
             textfont=dict(size=14, color=CARGLASS_DARK_RED, family='Inter', weight='bold'),
-            hovertemplate='<b>%{label}</b><br>Quantidade: %{value}<br>Percentual: %{percent}<extra></extra>'
-        )])
+            hovertemplate='<b>%{y}</b><br>Quantidade: %{x}<br>Percentual: %{customdata:.1f}%<extra></extra>',
+            customdata=percentages
+        ))
         
         # Calcular total mostrado no gráfico
         total_shown = sum(values)
         
         fig.update_layout(
             title={
-                'text': f'⚠️ Distribuição de Risco<br><sub style="font-size:14px;">Total: {total_shown} registros</sub>',
-                'font': {'size': 22, 'color': CARGLASS_DARK_RED, 'family': 'Inter'},
+                'text': f'⚠️ Distribuição de Risco (Total: {total_shown} registros)',
+                'font': {'size': 20, 'color': CARGLASS_DARK_RED, 'family': 'Inter'},
                 'x': 0.5,
                 'xanchor': 'center'
             },
-            height=450,
-            paper_bgcolor='white',
-            font={'color': CARGLASS_DARK_RED, 'family': 'Inter'},
-            showlegend=True,
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=-0.15,
-                xanchor="center",
-                x=0.5,
-                font=dict(size=12, family='Inter')
+            xaxis=dict(
+                title=dict(text='Quantidade de Registros', font=dict(size=13, color=CARGLASS_GRAY, family='Inter')),
+                tickfont=dict(size=11, color=CARGLASS_GRAY, family='Inter'),
+                showgrid=True,
+                gridcolor='#E8E8E8'
             ),
-            margin=dict(l=40, r=40, t=80, b=100)
+            yaxis=dict(
+                tickfont=dict(size=13, color=CARGLASS_DARK_RED, family='Inter')
+            ),
+            height=350,
+            paper_bgcolor='white',
+            plot_bgcolor='#FAFBFC',
+            font={'color': CARGLASS_DARK_RED, 'family': 'Inter'},
+            showlegend=False,
+            margin=dict(l=120, r=150, t=80, b=60)
         )
         
         return fig
@@ -1105,11 +1115,16 @@ def create_company_comparison(df):
     if 'Empresas' in df.columns and 'PERCENTUAL' in df.columns:
         # DataFrame já vem filtrado do load_data
         company_stats = df.groupby('Empresas').agg({
-            'PERCENTUAL': ['mean', 'count'],
+            'PERCENTUAL': 'mean',
             'ClientRisk': lambda x: (x == 'BAIXO').sum() / len(x) * 100 if len(x) > 0 else 0
         }).round(1)
         
-        company_stats.columns = ['Porcentagem Média', 'Total Análises', '% Risco Baixo']
+        # Adicionar contagem usando size() que conta TODOS os registros (não ignora NaN)
+        company_stats['Total Análises'] = df.groupby('Empresas').size()
+        
+        company_stats.columns = ['Porcentagem Média', '% Risco Baixo', 'Total Análises']
+        # Reordenar colunas
+        company_stats = company_stats[['Porcentagem Média', 'Total Análises', '% Risco Baixo']]
         company_stats = company_stats.sort_values('Porcentagem Média', ascending=False)
         
         # Total de análises no gráfico
@@ -1275,13 +1290,9 @@ if df is not None and len(df) > 0:
     
     col1, col2, col3, col4 = st.columns(4)
     
-    # Total de análises - EXATAMENTE como calculado na tabela de empresas
-    if 'Empresas' in df.columns and 'PERCENTUAL' in df.columns:
-        # Usar o mesmo cálculo da tabela: groupby + count
-        company_count = df.groupby('Empresas')['PERCENTUAL'].count()
-        total_analyses = int(company_count.sum())
-    else:
-        total_analyses = len(df)
+    # Total de análises - usar len(df) direto após filtros
+    # A tabela mostra a soma dos registros por empresa, que deve ser igual a len(df)
+    total_analyses = len(df)
     
     if 'PERCENTUAL' in df.columns:
         avg_score = df['PERCENTUAL'].mean()
