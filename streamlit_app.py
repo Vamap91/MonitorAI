@@ -319,18 +319,28 @@ def load_data(file):
         return None
 
 def generate_employee_pdf(df, employee_name):
+    """
+    Gera relatório PDF completo do colaborador com:
+    1. Análise qualitativa para feedback do gestor
+    2. Análise do histórico completo
+    3. Pontos de melhoria
+    4. Pontos positivos
+    5. Plano de desenvolvimento individual
+    """
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=0.5*inch, bottomMargin=0.5*inch)
     elements = []
     styles = getSampleStyleSheet()
     
+    # Estilos customizados
     title_style = ParagraphStyle(
         'CustomTitle',
         parent=styles['Heading1'],
         fontSize=24,
         textColor=HexColor(CARGLASS_RED),
         spaceAfter=30,
-        alignment=TA_CENTER
+        alignment=TA_CENTER,
+        fontName='Helvetica-Bold'
     )
     
     subtitle_style = ParagraphStyle(
@@ -338,79 +348,124 @@ def generate_employee_pdf(df, employee_name):
         parent=styles['Heading2'],
         fontSize=16,
         textColor=HexColor(CARGLASS_DARK_RED),
-        spaceAfter=20,
-        spaceBefore=20
+        spaceAfter=15,
+        spaceBefore=15,
+        fontName='Helvetica-Bold'
+    )
+    
+    section_style = ParagraphStyle(
+        'SectionStyle',
+        parent=styles['Heading3'],
+        fontSize=13,
+        textColor=HexColor(CARGLASS_RED),
+        spaceAfter=10,
+        spaceBefore=10,
+        fontName='Helvetica-Bold'
     )
     
     normal_style = ParagraphStyle(
         'CustomNormal',
         parent=styles['Normal'],
-        fontSize=11,
+        fontSize=10,
         textColor=colors.black,
-        spaceAfter=10
+        spaceAfter=8,
+        leading=14,
+        alignment=TA_LEFT
     )
     
-    elements.append(Paragraph(f"Relatório de Performance", title_style))
+    # Cabeçalho
+    elements.append(Paragraph(f"Relatório de Performance e Desenvolvimento", title_style))
     elements.append(Paragraph(f"Colaborador: {employee_name}", subtitle_style))
     elements.append(Paragraph(f"Data: {datetime.now().strftime('%d/%m/%Y')}", normal_style))
-    elements.append(Spacer(1, 0.5*inch))
+    elements.append(Spacer(1, 0.3*inch))
     
-    employee_df = df[df['CustomerAgent'] == employee_name]
+    # Filtrar dados do colaborador
+    employee_df = df[df['CustomerAgent'] == employee_name].copy()
     
     score_col = 'PERCENTUAL' if 'PERCENTUAL' in df.columns else 'NOTAS'
-    avg_score = employee_df[score_col].mean()
+    avg_score = employee_df[score_col].mean() if score_col == 'PERCENTUAL' else (employee_df[score_col].mean() / 81) * 100
     total_calls = len(employee_df)
     
     if 'ClientRisk' in employee_df.columns and len(employee_df) > 0:
         risk_baixo = (employee_df['ClientRisk'] == 'BAIXO').sum() / len(employee_df) * 100
+        risk_alto = (employee_df['ClientRisk'] == 'ALTO').sum() / len(employee_df) * 100
     else:
         risk_baixo = 0
+        risk_alto = 0
     
     if 'Client' in employee_df.columns and len(employee_df) > 0:
         employee_df['Client_Cluster'] = employee_df['Client'].apply(get_satisfaction_cluster)
         satisfaction = (employee_df['Client_Cluster'] == 'SATISFEITO').sum() / len(employee_df) * 100
+        insatisfaction = (employee_df['Client_Cluster'] == 'INSATISFEITO').sum() / len(employee_df) * 100
     else:
         satisfaction = 0
+        insatisfaction = 0
     
-    elements.append(Paragraph("Resumo de Performance", subtitle_style))
+    # Resumo executivo
+    elements.append(Paragraph("Resumo Executivo de Performance", subtitle_style))
     
     summary_data = [
-        ['Métrica', 'Valor'],
-        ['Porcentagem de Acerto Média', f'{round(avg_score)}%'],
-        ['Total de Ligações Analisadas', str(total_calls)],
-        ['Taxa de Risco Baixo', f'{round(risk_baixo)}%']
+        ['Métrica', 'Valor', 'Status'],
+        ['Porcentagem de Acerto Média', f'{round(avg_score)}%', '✓ Bom' if avg_score >= 70 else '✗ Abaixo da Meta'],
+        ['Total de Ligações Analisadas', str(total_calls), '-'],
+        ['Taxa de Risco Baixo', f'{round(risk_baixo)}%', '✓ Bom' if risk_baixo >= 60 else '✗ Atenção'],
+        ['Taxa de Satisfação do Cliente', f'{round(satisfaction)}%', '✓ Bom' if satisfaction >= 70 else '✗ Atenção']
     ]
     
-    summary_table = Table(summary_data, colWidths=[3*inch, 2*inch])
+    summary_table = Table(summary_data, colWidths=[2.5*inch, 1.5*inch, 1.5*inch])
     summary_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), HexColor(CARGLASS_RED)),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 12),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('FONTSIZE', (0, 0), (-1, 0), 11),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
         ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTSIZE', (0, 1), (-1, -1), 9)
     ]))
     
     elements.append(summary_table)
+    elements.append(Spacer(1, 0.3*inch))
     
-    # Adicionar explicações das métricas
-    explanation_style = ParagraphStyle(
-        'Explanation',
-        parent=styles['Normal'],
-        fontSize=9,
-        textColor=HexColor(CARGLASS_GRAY),
-        spaceAfter=5,
-        leftIndent=10
-    )
+    # ========== 1. ANÁLISE QUALITATIVA PARA FEEDBACK DO GESTOR ==========
+    elements.append(Paragraph("1. Análise Qualitativa para Feedback do Gestor", subtitle_style))
     
+    feedback_text = f"""
+    <b>Orientações para o Gestor:</b><br/><br/>
+    
+    O colaborador {employee_name} apresenta uma performance {'acima' if avg_score >= 70 else 'abaixo'} da meta estabelecida 
+    de 70%, com um percentual médio de acerto de {round(avg_score)}% em {total_calls} ligações analisadas.<br/><br/>
+    
+    <b>Aspectos Comportamentais e Técnicos:</b><br/>
+    """
+    
+    if avg_score >= 85:
+        feedback_text += """• O colaborador demonstra excelência no atendimento e domínio das técnicas de comunicação.<br/>
+    • Recomenda-se reconhecimento público e possível atuação como mentor para outros atendentes.<br/>
+    • Utilize este colaborador como exemplo de boas práticas em treinamentos.<br/><br/>"""
+    elif avg_score >= 70:
+        feedback_text += """• O colaborador apresenta performance satisfatória, cumprindo os padrões estabelecidos.<br/>
+    • Identificar oportunidades específicas de crescimento para alcançar o nível de excelência.<br/>
+    • Feedback deve focar em refinamento e desenvolvimento de habilidades avançadas.<br/><br/>"""
+    else:
+        feedback_text += """• O colaborador necessita de atenção e acompanhamento próximo do gestor.<br/>
+    • É fundamental estabelecer um plano de ação imediato com metas claras e alcançáveis.<br/>
+    • Agendar sessões de feedback semanais para acompanhamento do progresso.<br/><br/>"""
+    
+    if risk_alto > 20:
+        feedback_text += f"""<b>ATENÇÃO:</b> Taxa de risco alto em {round(risk_alto)}% dos atendimentos. 
+    Priorizar treinamento em gestão de conflitos e técnicas de de-escalation.<br/><br/>"""
+    
+    if insatisfaction > 30:
+        feedback_text += f"""<b>ATENÇÃO:</b> Taxa de insatisfação do cliente em {round(insatisfaction)}% dos casos. 
+    Reforçar técnicas de empatia e resolução de problemas.<br/><br/>"""
+    
+    elements.append(Paragraph(feedback_text, normal_style))
     elements.append(Spacer(1, 0.2*inch))
-    elements.append(Paragraph("<b>Entenda as métricas:</b>", explanation_style))
-    elements.append(Paragraph("• <b>Porcentagem de Acerto Média:</b> Média geral de acerto em todos os critérios avaliados (0-100%).", explanation_style))
-    elements.append(Paragraph("• <b>Total de Ligações Analisadas:</b> Quantidade de ligações avaliadas neste período.", explanation_style))
-    elements.append(Paragraph("• <b>Taxa de Risco Baixo:</b> Percentual de ligações classificadas como risco baixo (segurança operacional).", explanation_style))
-    elements.append(Spacer(1, 0.5*inch))
+    
+    # ========== 2. ANÁLISE DO HISTÓRICO COMPLETO ==========
+    elements.append(Paragraph("2. Análise do Histórico Completo", subtitle_style))
     
     question_names = {
         'Question1': 'Saudação',
@@ -427,39 +482,232 @@ def generate_employee_pdf(df, employee_name):
         'Question12': 'Pesquisa'
     }
     
-    elements.append(Paragraph("Performance por Critério", subtitle_style))
-    
-    criteria_data = [['Critério', 'Acerto (%)']]
+    # Calcular performance por critério
+    criteria_performance = {}
     for i in range(1, 13):
         q = f'Question{i}'
         if q in employee_df.columns:
             perf = employee_df[q].mean() * 100
-            criteria_data.append([question_names.get(q, q), f'{round(perf)}%'])
+            criteria_performance[question_names.get(q, q)] = perf
     
-    criteria_table = Table(criteria_data, colWidths=[3*inch, 2*inch])
+    # Análise textual do histórico
+    historico_text = f"""
+    <b>Período Analisado:</b> {employee_df['AnalysisDateTime'].min().strftime('%d/%m/%Y') if 'AnalysisDateTime' in employee_df.columns else 'N/A'} 
+    a {employee_df['AnalysisDateTime'].max().strftime('%d/%m/%Y') if 'AnalysisDateTime' in employee_df.columns else 'N/A'}<br/><br/>
+    
+    <b>Volume de Atendimentos:</b> O colaborador realizou {total_calls} atendimentos no período, 
+    {'demonstrando consistência e volume adequado de trabalho' if total_calls >= 20 else 'com volume abaixo do esperado, sugerindo necessidade de aumento de produtividade'}.<br/><br/>
+    
+    <b>Padrões Identificados:</b><br/>
+    """
+    
+    # Identificar tendências
+    strong_areas = [k for k, v in criteria_performance.items() if v >= 85]
+    good_areas = [k for k, v in criteria_performance.items() if 70 <= v < 85]
+    weak_areas = [k for k, v in criteria_performance.items() if v < 70]
+    
+    if strong_areas:
+        historico_text += f"• <b>Áreas de Excelência:</b> {', '.join(strong_areas[:3])} - Demonstra domínio consistente.<br/>"
+    if good_areas:
+        historico_text += f"• <b>Áreas Satisfatórias:</b> {', '.join(good_areas[:3])} - Atende aos padrões estabelecidos.<br/>"
+    if weak_areas:
+        historico_text += f"• <b>Áreas Críticas:</b> {', '.join(weak_areas[:3])} - Requerem atenção imediata.<br/>"
+    
+    # Análise de evolução se houver dados temporais
+    if 'AnalysisDateTime' in employee_df.columns and len(employee_df) >= 5:
+        employee_df_sorted = employee_df.sort_values('AnalysisDateTime')
+        first_half = employee_df_sorted.head(len(employee_df_sorted)//2)
+        second_half = employee_df_sorted.tail(len(employee_df_sorted)//2)
+        
+        score_first = first_half[score_col].mean() if score_col == 'PERCENTUAL' else (first_half[score_col].mean() / 81) * 100
+        score_second = second_half[score_col].mean() if score_col == 'PERCENTUAL' else (second_half[score_col].mean() / 81) * 100
+        
+        trend = score_second - score_first
+        
+        historico_text += f"<br/><b>Evolução Temporal:</b> "
+        if trend > 5:
+            historico_text += f"Tendência positiva detectada (+{round(trend, 1)}%). O colaborador está melhorando consistentemente.<br/>"
+        elif trend < -5:
+            historico_text += f"Tendência negativa detectada ({round(trend, 1)}%). Necessário investigar causas da queda de performance.<br/>"
+        else:
+            historico_text += f"Performance estável. Manter foco em consistência e buscar oportunidades de crescimento.<br/>"
+    
+    elements.append(Paragraph(historico_text, normal_style))
+    elements.append(Spacer(1, 0.2*inch))
+    
+    # Tabela de performance detalhada
+    elements.append(Paragraph("Performance Detalhada por Critério", section_style))
+    
+    criteria_data = [['Critério', 'Performance', 'Status']]
+    for criterion, perf in sorted(criteria_performance.items(), key=lambda x: x[1], reverse=True):
+        status = '✓ Excelente' if perf >= 85 else '✓ Bom' if perf >= 70 else '✗ Precisa Melhorar'
+        criteria_data.append([criterion, f'{round(perf)}%', status])
+    
+    criteria_table = Table(criteria_data, colWidths=[2.5*inch, 1.5*inch, 1.5*inch])
     criteria_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), HexColor(CARGLASS_RED)),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 12),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
         ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ('GRID', (0, 0), (-1, -1), 1, colors.black),
+        ('FONTSIZE', (0, 1), (-1, -1), 9)
     ]))
     
     elements.append(criteria_table)
-    
-    # Adicionar explicação dos critérios
-    elements.append(Spacer(1, 0.2*inch))
-    elements.append(Paragraph("<b>Sobre os critérios:</b>", explanation_style))
-    elements.append(Paragraph("• Cada critério avalia um aspecto específico do atendimento conforme checklist de qualidade.", explanation_style))
-    elements.append(Paragraph("• Valores abaixo de 70% indicam necessidade de treinamento naquele critério.", explanation_style))
-    
     elements.append(PageBreak())
     
+    # ========== 3. PONTOS DE MELHORIA ==========
+    elements.append(Paragraph("3. Pontos de Melhoria (Áreas Críticas)", subtitle_style))
+    
+    weak_points = [(k, v) for k, v in criteria_performance.items() if v < 70]
+    weak_points.sort(key=lambda x: x[1])
+    
+    if weak_points:
+        melhoria_text = "<b>Os seguintes pontos requerem atenção e desenvolvimento prioritário:</b><br/><br/>"
+        
+        for i, (criterion, perf) in enumerate(weak_points, 1):
+            melhoria_text += f"<b>{i}. {criterion}</b> ({round(perf)}% de acerto)<br/>"
+            
+            # Recomendações específicas por critério
+            if 'Saudação' in criterion:
+                melhoria_text += """• Treinar abertura padronizada do atendimento com identificação clara<br/>
+• Praticar tom de voz acolhedor e profissional<br/>
+• Revisar script de saudação e aplicar consistentemente<br/><br/>"""
+            
+            elif 'Dados Cadastrais' in criterion:
+                melhoria_text += """• Reforçar importância da coleta completa de informações<br/>
+• Praticar técnicas de confirmação de dados<br/>
+• Utilizar checklist mental durante o atendimento<br/><br/>"""
+            
+            elif 'LGPD' in criterion:
+                melhoria_text += """• Treinamento obrigatório sobre Lei Geral de Proteção de Dados<br/>
+• Incluir solicitação de consentimento em todas as ligações<br/>
+• Revisar políticas de privacidade da empresa<br/><br/>"""
+            
+            elif 'Escuta Ativa' in criterion:
+                melhoria_text += """• Praticar técnicas de parafraseamento<br/>
+• Evitar interrupções durante a fala do cliente<br/>
+• Demonstrar compreensão com confirmações verbais<br/><br/>"""
+            
+            elif 'Conhecimento' in criterion:
+                melhoria_text += """• Intensificar estudo de produtos e serviços<br/>
+• Participar de treinamentos técnicos regulares<br/>
+• Consultar base de conhecimento antes de cada turno<br/><br/>"""
+            
+            else:
+                melhoria_text += f"""• Revisar procedimentos padrão relacionados a {criterion}<br/>
+• Buscar mentoria com colaboradores de alta performance<br/>
+• Praticar através de role-playing e simulações<br/><br/>"""
+    else:
+        melhoria_text = """<b>Parabéns!</b> Todos os critérios estão acima da meta de 70%. 
+        Foco agora deve ser em refinamento e excelência em todas as áreas.<br/><br/>"""
+    
+    elements.append(Paragraph(melhoria_text, normal_style))
+    elements.append(Spacer(1, 0.2*inch))
+    
+    # ========== 4. PONTOS POSITIVOS ==========
+    elements.append(Paragraph("4. Pontos Positivos (Forças Identificadas)", subtitle_style))
+    
+    strong_points = [(k, v) for k, v in criteria_performance.items() if v >= 70]
+    strong_points.sort(key=lambda x: x[1], reverse=True)
+    
+    if strong_points:
+        positivos_text = "<b>O colaborador demonstra excelência e competência nas seguintes áreas:</b><br/><br/>"
+        
+        for i, (criterion, perf) in enumerate(strong_points[:5], 1):
+            nivel = "Excelência" if perf >= 85 else "Bom"
+            positivos_text += f"<b>{i}. {criterion}</b> - {round(perf)}% ({nivel})<br/>"
+            
+            if perf >= 85:
+                positivos_text += f"""• Performance consistentemente acima das expectativas<br/>
+• Pode servir como referência e mentor para outros colaboradores<br/>
+• Manter este padrão e buscar oportunidades de compartilhar conhecimento<br/><br/>"""
+            else:
+                positivos_text += f"""• Atende aos padrões estabelecidos com consistência<br/>
+• Continue desenvolvendo esta competência rumo à excelência<br/><br/>"""
+        
+        if satisfaction >= 70:
+            positivos_text += f"""<b>Destaque Especial:</b> Taxa de satisfação do cliente de {round(satisfaction)}%, 
+            demonstrando capacidade de gerar experiências positivas.<br/><br/>"""
+        
+        if risk_baixo >= 70:
+            positivos_text += f"""<b>Gestão de Risco:</b> Excelente controle com {round(risk_baixo)}% de casos classificados como baixo risco, 
+            evidenciando maturidade no tratamento de situações complexas.<br/><br/>"""
+    else:
+        positivos_text = """É importante reconhecer o esforço e dedicação do colaborador. 
+        Mesmo em fase de desenvolvimento, há potencial a ser explorado com o treinamento adequado.<br/><br/>"""
+    
+    elements.append(Paragraph(positivos_text, normal_style))
+    elements.append(PageBreak())
+    
+    # ========== 5. PLANO DE DESENVOLVIMENTO ==========
+    elements.append(Paragraph("5. Plano de Desenvolvimento Individual (PDI)", subtitle_style))
+    
+    pdi_text = """<b>Objetivo Geral:</b> Desenvolver competências para atingir e manter performance de excelência 
+    (acima de 85% em todos os critérios).<br/><br/>"""
+    
+    # Metas de curto prazo (30 dias)
+    pdi_text += "<b>Metas de Curto Prazo (30 dias):</b><br/>"
+    
+    if avg_score < 70:
+        pdi_text += f"• Alcançar {round(avg_score + 10)}% de acerto médio através de treinamento intensivo<br/>"
+        pdi_text += "• Participar de 4 sessões de coaching individual com o gestor<br/>"
+        pdi_text += "• Realizar shadowing com colaborador de alta performance (mínimo 10 ligações)<br/>"
+    else:
+        pdi_text += "• Manter performance acima de 70% com consistência<br/>"
+        pdi_text += "• Identificar 2 áreas para aprimoramento rumo aos 85%<br/>"
+        pdi_text += "• Participar como observador em treinamentos de novos colaboradores<br/>"
+    
+    if weak_points:
+        pdi_text += f"• Focar no desenvolvimento prioritário de: {', '.join([wp[0] for wp in weak_points[:2]])}<br/>"
+    
+    pdi_text += "<br/><b>Ações de Médio Prazo (60-90 dias):</b><br/>"
+    pdi_text += "• Certificação em técnicas avançadas de atendimento ao cliente<br/>"
+    pdi_text += "• Alcançar 85% de acerto médio em todos os critérios<br/>"
+    pdi_text += "• Reduzir taxa de risco alto para menos de 5% dos atendimentos<br/>"
+    pdi_text += "• Aumentar satisfação do cliente para acima de 80%<br/>"
+    
+    pdi_text += "<br/><b>Plano de Treinamento:</b><br/>"
+    
+    training_plan = []
+    if weak_points:
+        for criterion, _ in weak_points[:3]:
+            if 'LGPD' in criterion:
+                training_plan.append("• Curso online: Fundamentos da LGPD (4 horas)")
+            elif 'Conhecimento' in criterion:
+                training_plan.append("• Workshop: Catálogo de Produtos e Serviços (8 horas)")
+            elif 'Comunicação' in criterion:
+                training_plan.append("• Treinamento: Comunicação Eficaz no Atendimento (6 horas)")
+            elif 'Escuta Ativa' in criterion:
+                training_plan.append("• Workshop: Técnicas de Escuta Ativa (4 horas)")
+            else:
+                training_plan.append(f"• Módulo específico: {criterion} (4 horas)")
+    
+    training_plan.append("• Acompanhamento semanal com gestor (1 hora/semana)")
+    training_plan.append("• Autoavaliação mensal de progresso")
+    
+    pdi_text += "<br/>".join(training_plan)
+    
+    pdi_text += "<br/><br/><b>Indicadores de Sucesso:</b><br/>"
+    pdi_text += "• Acerto médio acima de 85% em 3 meses<br/>"
+    pdi_text += "• Zero casos de risco alto por mês<br/>"
+    pdi_text += "• Satisfação do cliente acima de 85%<br/>"
+    pdi_text += "• Feedback positivo do gestor em todas as revisões mensais<br/>"
+    
+    pdi_text += "<br/><b>Acompanhamento:</b><br/>"
+    pdi_text += "• Reuniões de feedback: Semanais no primeiro mês, depois quinzenais<br/>"
+    pdi_text += "• Revisão formal do PDI: Mensalmente<br/>"
+    pdi_text += "• Análise de gravações: 2 ligações por semana com feedback detalhado<br/>"
+    
+    elements.append(Paragraph(pdi_text, normal_style))
+    elements.append(Spacer(1, 0.3*inch))
+    
+    # Histórico recente
     if 'AnalysisDateTime' in employee_df.columns:
-        elements.append(Paragraph("Histórico Recente", subtitle_style))
+        elements.append(Paragraph("Histórico Recente de Atendimentos", section_style))
         
         recent_df = employee_df.sort_values('AnalysisDateTime', ascending=False).head(10)
         
@@ -471,71 +719,42 @@ def generate_employee_pdf(df, employee_name):
             client = row.get('Client', 'N/A')
             history_data.append([date_str, f'{round(score)}%', risk, client])
         
-        history_table = Table(history_data, colWidths=[1.5*inch, 1.5*inch, 1.5*inch, 1.5*inch])
-        
-        # Aplicar estilo com destaque para linhas com ALTO
-        table_style = [
+        history_table = Table(history_data, colWidths=[1.4*inch, 1.4*inch, 1.4*inch, 1.4*inch])
+        history_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), HexColor(CARGLASS_RED)),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 11),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
             ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
             ('GRID', (0, 0), (-1, -1), 1, colors.black),
             ('FONTSIZE', (0, 1), (-1, -1), 9)
-        ]
+        ]))
         
-        # Destacar linhas com risco ALTO em amarelo
-        for i, row in enumerate(history_data[1:], start=1):
-            if row[2] == 'ALTO':
-                table_style.append(('BACKGROUND', (2, i), (2, i), colors.yellow))
-        
-        history_table.setStyle(TableStyle(table_style))
         elements.append(history_table)
-        
-        # Adicionar detalhes de casos de risco ALTO
-        high_risk_cases = recent_df[recent_df['ClientRisk'] == 'ALTO']
-        if len(high_risk_cases) > 0:
-            elements.append(Spacer(1, 0.3*inch))
-            elements.append(Paragraph("<b>⚠️ Detalhes dos Casos de Risco Alto:</b>", explanation_style))
-            
-            for idx, (_, row) in enumerate(high_risk_cases.iterrows(), 1):
-                date_str = row['AnalysisDateTime'].strftime('%d/%m/%Y')
-                mp3_file = row.get('Mp3FileName', 'N/A')
-                justification = row.get('Justification', 'Sem justificativa registrada')
-                
-                # Limitar tamanho da justificativa
-                if len(justification) > 150:
-                    justification = justification[:150] + '...'
-                
-                elements.append(Paragraph(f"<b>{idx}. {date_str}</b>", explanation_style))
-                elements.append(Paragraph(f"   Gravação: {mp3_file}", explanation_style))
-                elements.append(Paragraph(f"   Justificativa: {justification}", explanation_style))
-                elements.append(Spacer(1, 0.1*inch))
     
+    # Assinaturas
     elements.append(Spacer(1, 0.5*inch))
-    elements.append(Paragraph("Recomendações", subtitle_style))
+    elements.append(Paragraph("_" * 80, normal_style))
     
-    weak_points = []
-    for i in range(1, 13):
-        q = f'Question{i}'
-        if q in employee_df.columns:
-            perf = employee_df[q].mean() * 100
-            if perf < 70:
-                weak_points.append((question_names.get(q, q), perf))
+    signature_data = [
+        ['_____________________________', '_____________________________'],
+        ['Assinatura do Colaborador', 'Assinatura do Gestor'],
+        ['', ''],
+        ['Data: ____/____/________', 'Data: ____/____/________']
+    ]
     
-    weak_points.sort(key=lambda x: x[1])
+    signature_table = Table(signature_data, colWidths=[3*inch, 3*inch])
+    signature_table.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('TOPPADDING', (0, 0), (-1, -1), 8)
+    ]))
     
-    if weak_points:
-        recommendations = "Pontos que necessitam maior atenção:<br/>"
-        for point, perf in weak_points[:3]:
-            recommendations += f"• {point}: {round(perf)}% de acerto<br/>"
-    else:
-        recommendations = "Parabéns! Todos os critérios estão acima da meta de 70%."
+    elements.append(signature_table)
     
-    elements.append(Paragraph(recommendations, normal_style))
-    
+    # Gerar PDF
     doc.build(elements)
     buffer.seek(0)
     return buffer
